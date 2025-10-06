@@ -1,6 +1,6 @@
 # views.py
 
-from rest_framework import viewsets
+from rest_framework import viewsets, permissions
 from .models import (
     UniversityAdmin, Student, Attempt,
     Task, Case, Parameter, Recommendation,
@@ -19,10 +19,12 @@ from .serializers import (
 class UniversityAdminViewSet(viewsets.ModelViewSet):
     queryset = UniversityAdmin.objects.all()
     serializer_class = UniversityAdminSerializer
+    permission_classes = [permissions.IsAdminUser]  # только главный админ может управлять
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
+    permission_classes = (permissions.IsAuthenticated,)
 
 # Views для попыток, тестов и случаев
 class AttemptViewSet(viewsets.ModelViewSet):

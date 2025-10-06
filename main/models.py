@@ -1,23 +1,25 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-# Create your models here.
+
 class User(AbstractUser):
+    username = models.EmailField(unique=True)
     name = models.CharField(max_length=120)
-    email = models.EmailField(unique=True)
-    admin_list = models.ForeignKey('UniversityAdmin',on_delete=models.CASCADE,null=True)
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['name']
+
     def __str__(self):
         return self.name
 
+
 class UniversityAdmin(models.Model):
-    fullname = models.CharField(max_length=120)
+    name = models.CharField(max_length=120)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='university_admin')
     university = models.CharField(max_length=120)
     is_active = models.BooleanField(default=True)
-    date_start = models.DateField(auto_now=False, auto_now_add=True)
-    date_end = models.DateField(auto_now=False, auto_now_add=True)
-    student_list = models.ForeignKey('Student', on_delete=models.CASCADE,null=True)
+
     def __str__(self):
-        return self.fullname
+        return f"{self.name} ({self.university})"
 
 class Student(models.Model):
     surname = models.CharField(max_length=120)
