@@ -1,18 +1,18 @@
 # views.py
 
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, generics
 from .models import (
- Student, Attempt,
+    Attempt,
     Task, Case, Parameter, Recommendation,
-    Layer1, Layer2, Layer3, Layer4
+    Layer1, Layer2, Layer3, Layer4, WorkerProfile, Account
 )
 from .serializers import (
-    StudentSerializer,
+
     AttemptSerializer, TaskSerializer,
     CaseSerializer, ParameterSerializer,
     RecommendationSerializer, Layer1Serializer,
     Layer2Serializer, Layer3Serializer,
-    Layer4Serializer
+    Layer4Serializer, WorkerRegistrationSerializer, AdminCreateSerializer, WorkerSerializer
 )
 
 from django.contrib.auth import authenticate
@@ -21,7 +21,7 @@ from django.middleware import csrf
 from rest_framework import exceptions as rest_exceptions, response, decorators as rest_decorators, permissions as rest_permissions
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, exceptions as jwt_exceptions
 from main import serializers, models
-
+from .permissions import IsSuperAdmin
 
 # Views для администраторов и студентов
 def get_user_tokens(user):
@@ -147,9 +147,23 @@ def user(request):
     serializer = serializers.AccountSerializer(user)
     return response.Response(serializer.data)
 
+
+
+class WorkerRegisterView(generics.CreateAPIView):
+    serializer_class = WorkerRegistrationSerializer
+    permission_classes = [permissions.AllowAny]  # сам регистрируется
+
+class AdminCreateView(generics.CreateAPIView):
+    serializer_class = AdminCreateSerializer
+    permission_classes = [IsSuperAdmin]  # только главный админ может создавать админов
+
+    def perform_create(self, serializer):
+        # явно выставляем роль ADMIN
+        serializer.save(role=Account.Role.ADMIN)
+
 class StudentViewSet(viewsets.ModelViewSet):
-    queryset = Student.objects.all()
-    serializer_class = StudentSerializer
+    queryset = WorkerProfile.objects.all()
+    serializer_class = WorkerSerializer
     permission_classes = (permissions.IsAuthenticated,)
 
 # Views для попыток, тестов и случаев

@@ -6,11 +6,12 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from main import views
+from main.serializers import AdminCreateSerializer, WorkerSerializer
 from main.views import (
     StudentViewSet, AttemptViewSet,
     TaskViewSet, CaseViewSet, ParameterViewSet,
     RecommendationViewSet, Layer1ViewSet,
-    Layer2ViewSet, Layer3ViewSet, Layer4ViewSet
+    Layer2ViewSet, Layer3ViewSet, Layer4ViewSet, AdminCreateView, WorkerRegisterView
 )
 
 
@@ -28,6 +29,7 @@ router.register(r'layers4', Layer4ViewSet)
 
 
 
+
 urlpatterns = [
     # Включаем все URL-адреса, сгенерированные роутером
     path('api/', include(router.urls)),
@@ -38,4 +40,7 @@ urlpatterns = [
     path("api/auth/user", views.user),
 
     path('api/admin/', admin.site.urls),
+
+    path('api/auth/admin_register',views.AdminCreateView.as_view()),
+    path('api/auth/worker_register',views.WorkerRegisterView.as_view()),
 ]

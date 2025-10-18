@@ -1,47 +1,53 @@
 from django.contrib.auth.models import AbstractUser, PermissionsMixin
 from django.db import models
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser
-
+from django.conf import settings
 
 class AccountManager(BaseUserManager):
-    def create_user(self, email, username, password=None, **kwargs):
-
+    def create_user(self, email, username, password=None, role="WORKER", **kwargs):
         if not email:
             raise ValueError("Email is required")
-
         if not username:
             raise ValueError("Username is required")
 
-        user = self.model(
-            email=self.normalize_email(email),
-            username=username,
-        )
-
+        email = self.normalize_email(email)
+        user = self.model(email=email, username=username, role=role, **kwargs)
         user.set_password(password)
         user.save(using=self._db)
-
         return user
 
     def create_superuser(self, email, username, password, **kwargs):
-        user = self.create_user(
-            email=self.normalize_email(email),
-            username=username,
-            password=password
-        )
-
+        # superadmin — главный админ
+        user = self.create_user(email=email, username=username, password=password, role=Account.Role.SUPERADMIN, **kwargs)
         user.is_admin = True
         user.is_staff = True
         user.is_superuser = True
         user.save(using=self._db)
-        return
+        return user
+
+    def create_admin(self, email, username, password=None, **kwargs):
+        user = self.create_user(email=email, username=username, password=password, role=Account.Role.ADMIN, **kwargs)
+        user.is_staff = True
+        user.save(using=self._db)
+        return user
+
+    def create_worker(self, email, username, password=None, **kwargs):
+        return self.create_user(email=email, username=username, password=password, role=Account.Role.WORKER, **kwargs)
 
 
-class Account(AbstractBaseUser,PermissionsMixin):
+class Account(AbstractBaseUser, PermissionsMixin):
+    class Role(models.TextChoices):
+        SUPERADMIN = "SUPERADMIN", "Главный администратор"
+        ADMIN = "ADMIN", "Администратор"
+        WORKER = "WORKER", "Работник"
+
     email = models.EmailField(null=False, blank=False, unique=True)
     username = models.CharField(max_length=50, blank=False, null=False)
-    is_admin = models.BooleanField(default=False)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.WORKER)
+
+    is_admin = models.BooleanField(default=False)     # можно использовать для логики
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
+    is_staff = models.BooleanField(default=False)     # даёт доступ в admin-site
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -51,29 +57,48 @@ class Account(AbstractBaseUser,PermissionsMixin):
     REQUIRED_FIELDS = ["username"]
 
     def __str__(self):
-        return self.username
+        return f"{self.username} ({self.role})"
 
     def has_perm(self, perm, obj=None):
-        return True
+        # по умолчанию суперюзер имеет всё
+        if self.is_superuser or self.role == Account.Role.SUPERADMIN:
+            return True
+        # можно расширять: проверять конкретные perms
+        return super().has_perm(perm, obj)
 
     def has_module_perms(self, app_label):
-        return True
+        if self.is_superuser or self.role == Account.Role.SUPERADMIN:
+            return True
+        return True  # или ограничить
 
-class Student(models.Model):
-    surname = models.CharField(max_length=120)
-    name = models.CharField(max_length=120)
-    middle_name = models.CharField(max_length=120)
-    birth_date = models.DateField()
-    email = models.EmailField(unique=True)
+    # дополнительное удобство:
+    @property
+    def is_superadmin(self):
+        return self.role == Account.Role.SUPERADMIN
+
+    @property
+    def is_admin_role(self):
+        return self.role == Account.Role.ADMIN
+
+    @property
+    def is_worker(self):
+        return self.role == Account.Role.WORKER
+
+
+class WorkerProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="worker_profile")
+    place_of_work = models.CharField(max_length=255, blank=True, null=False)
+    position = models.CharField(max_length=255, blank=True, null=False)
+
     def __str__(self):
-        return f"{self.surname} {self.name} {self.middle_name}"
+        return f"Profile for {self.user.email}"
 
 class Attempt(models.Model):
     start_time = models.TimeField(auto_now=False, auto_now_add=True)
     end_time = models.TimeField()
     mark = models.IntegerField()
     status = models.CharField(max_length=120)
-    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    WorkerProfile = models.ForeignKey(WorkerProfile, on_delete=models.CASCADE)
     def __str__(self):
         return self.start_time,self.end_time,self.mark,self.status
 

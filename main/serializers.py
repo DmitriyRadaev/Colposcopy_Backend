@@ -1,38 +1,52 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from main.models import Student, Attempt, Task, Case, Parameter, Recommendation, Layer1, Layer2, \
-    Layer3, Layer4
+from main.models import Attempt, Task, Case, Parameter, Recommendation, Layer1, Layer2, \
+    Layer3, Layer4, Account, WorkerProfile
 
 
-class RegistrationSerializer(serializers.ModelSerializer):
-
-    password2 = serializers.CharField(style={"input_type": "password"})
+class WorkerRegistrationSerializer(serializers.ModelSerializer):
+    place_of_work = serializers.CharField(required=False, allow_blank=True)
+    position = serializers.CharField(required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, required=True, min_length=8)
 
     class Meta:
-        model = get_user_model()
-        fields = ("username", "email", "password", "password2")
-        extra_kwargs = {
-            "password": {"write_only": True},
-            "password2": {"write_only": True}
-        }
+        model = Account
+        fields = ("email", "username", "password", "place_of_work", "position")
 
-    def save(self):
-        user = get_user_model()(
-            email=self.validated_data["email"],
-            username=self.validated_data["username"],
+    def create(self, validated_data):
+        place = validated_data.pop("place_of_work", "")
+        pos = validated_data.pop("position", "")
+        user = Account.objects.create_worker(
+            email=validated_data["email"],
+            username=validated_data["username"],
+            password=validated_data["password"],
         )
+        # создать/обновить профиль
+        WorkerProfile.objects.update_or_create(user=user, defaults={
+            "place_of_work": place,
+            "position": pos
+        })
+        return user
 
-        password = self.validated_data["password"]
-        password2 = self.validated_data["password2"]
+class AdminCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, min_length=8)
 
-        if password != password2:
-            raise serializers.ValidationError(
-                {"password": "Passwords do not match!"})
+    class Meta:
+        model = Account
+        fields = ("email", "username", "password", "role")
+        read_only_fields = ("role",)  # можно фиксировать роль ADMIN в view
 
-        user.set_password(password)
+    def create(self, validated_data):
+        # ожидаем что view установит роль ADMIN
+        role = validated_data.get("role", Account.Role.ADMIN)
+        user = Account.objects.create_admin(
+            email=validated_data["email"],
+            username=validated_data["username"],
+            password=validated_data["password"],
+        )
+        user.role = role
         user.save()
-
         return user
 
 
@@ -48,10 +62,10 @@ class AccountSerializer(serializers.ModelSerializer):
         fields = ("username", "email")
 
 
-class StudentSerializer(serializers.ModelSerializer):
+class WorkerSerializer(serializers.ModelSerializer):
     class Meta:
         fields = '__all__'
-        model = Student
+        model = WorkerProfile
 
 class AttemptSerializer(serializers.ModelSerializer):
     class Meta:
