@@ -1,205 +1,254 @@
 # views.py
-
-from rest_framework import viewsets, permissions, generics
-from .models import (
-    Attempt,
-    Task, Case, Parameter, Recommendation,
-    Layer1, Layer2, Layer3, Layer4, WorkerProfile, Account
-)
-from .serializers import (
-
-    AttemptSerializer, TaskSerializer,
-    CaseSerializer, ParameterSerializer,
-    RecommendationSerializer, Layer1Serializer,
-    Layer2Serializer, Layer3Serializer,
-    Layer4Serializer, WorkerRegistrationSerializer, AdminCreateSerializer, WorkerSerializer
-)
-
+from rest_framework import viewsets, generics, permissions, response, decorators, status
+from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, exceptions as jwt_exceptions
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware import csrf
-from rest_framework import exceptions as rest_exceptions, response, decorators as rest_decorators, permissions as rest_permissions
-from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, exceptions as jwt_exceptions
-from main import serializers, models
-from .permissions import IsSuperAdmin
+from rest_framework import exceptions as rest_exceptions
 
-# Views для администраторов и студентов
+from django.shortcuts import get_object_or_404
+
+from django.contrib.auth import get_user_model
+from .models import (
+    WorkerProfile, Case, Layer, Task, Question, Choice,
+    Parameter, Recommendation, Attempt
+)
+from .serializers import (
+    AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
+    WorkerProfileSerializer, CaseSerializer, LayerSerializer, TaskSerializer, QuestionSerializer,
+    ChoiceSerializer, ChoiceAdminSerializer, ParameterSerializer, RecommendationSerializer,
+    AttemptSerializer, AttemptAnswerSerializer
+)
+from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
+
+Account = get_user_model()
+
+
+# JWT cookie helpers (from your previous code)
 def get_user_tokens(user):
     refresh = tokens.RefreshToken.for_user(user)
-    return {
-        "refresh_token": str(refresh),
-        "access_token": str(refresh.access_token)
-    }
+    return {"refresh_token": str(refresh), "access_token": str(refresh.access_token)}
 
 
-@rest_decorators.api_view(["POST"])
-@rest_decorators.permission_classes([])
+@decorators.api_view(["POST"])
+@decorators.permission_classes([])
 def loginView(request):
-    serializer = serializers.LoginSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    email = serializer.validated_data["email"]
-    password = serializer.validated_data["password"]
+    email = request.data.get("email")
+    password = request.data.get("password")
+    if not email or not password:
+        raise rest_exceptions.ValidationError({"detail": "Email and password required"})
 
     user = authenticate(email=email, password=password)
+    if not user:
+        raise rest_exceptions.AuthenticationFailed("Email or password is incorrect!")
 
-    if user is not None:
-        tokens = get_user_tokens(user)
-        res = response.Response()
-        res.set_cookie(
-            key=settings.SIMPLE_JWT['AUTH_COOKIE'],
-            value=tokens["access_token"],
-            expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
-            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
-            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
-        )
+    tokens_dict = get_user_tokens(user)
+    res = response.Response(tokens_dict)
 
-        res.set_cookie(
-            key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
-            value=tokens["refresh_token"],
-            expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
-            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
-            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
-        )
+    res.set_cookie(
+        key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+        value=tokens_dict["access_token"],
+        expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
+        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
+    res.set_cookie(
+        key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
+        value=tokens_dict["refresh_token"],
+        expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
+        secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
+        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
 
-        res.data = tokens
-        res["X-CSRFToken"] = csrf.get_token(request)
-        return res
-    raise rest_exceptions.AuthenticationFailed(
-        "Email or Password is incorrect!")
+    res["X-CSRFToken"] = csrf.get_token(request)
+    return res
 
 
-@rest_decorators.api_view(["POST"])
-@rest_decorators.permission_classes([])
-def registerView(request):
-    serializer = serializers.RegistrationSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    user = serializer.save()
-
-    if user is not None:
-        return response.Response("Registered!")
-    return rest_exceptions.AuthenticationFailed("Invalid credentials!")
-
-
-@rest_decorators.api_view(['POST'])
-@rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
+@decorators.api_view(["POST"])
+@decorators.permission_classes([permissions.IsAuthenticated])
 def logoutView(request):
     try:
-        refreshToken = request.COOKIES.get(
-            settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-        token = tokens.RefreshToken(refreshToken)
-        token.blacklist()
+        refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+        if refresh_token:
+            token = tokens.RefreshToken(refresh_token)
+            token.blacklist()
+    except Exception:
+        pass
 
-        res = response.Response()
-        res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
-        res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-        res.delete_cookie("X-CSRFToken")
-        res.delete_cookie("csrftoken")
-        res["X-CSRFToken"] = None
-
-        return res
-    except:
-        raise rest_exceptions.ParseError("Invalid token")
+    res = response.Response({"detail": "Logged out"})
+    res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
+    res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+    res.delete_cookie("X-CSRFToken")
+    return res
 
 
 class CookieTokenRefreshSerializer(jwt_serializers.TokenRefreshSerializer):
     refresh = None
 
     def validate(self, attrs):
-        attrs['refresh'] = self.context['request'].COOKIES.get('refresh')
+        attrs['refresh'] = self.context['request'].COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if attrs['refresh']:
             return super().validate(attrs)
-        else:
-            raise jwt_exceptions.InvalidToken(
-                'No valid token found in cookie \'refresh\'')
+        raise jwt_exceptions.InvalidToken("No valid refresh token in cookie")
 
 
 class CookieTokenRefreshView(jwt_views.TokenRefreshView):
     serializer_class = CookieTokenRefreshSerializer
 
-    def finalize_response(self, request, response, *args, **kwargs):
-        if response.data.get("refresh"):
-            response.set_cookie(
+    def finalize_response(self, request, response_obj, *args, **kwargs):
+        if response_obj.data.get("refresh"):
+            response_obj.set_cookie(
                 key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
-                value=response.data['refresh'],
+                value=response_obj.data['refresh'],
                 expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
-                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-                httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
-                samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+                secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
+                httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
+                samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
             )
-
-            del response.data["refresh"]
-        response["X-CSRFToken"] = request.COOKIES.get("csrftoken")
-        return super().finalize_response(request, response, *args, **kwargs)
-
-
-@rest_decorators.api_view(["GET"])
-@rest_decorators.permission_classes([rest_permissions.IsAuthenticated])
-def user(request):
-    try:
-        user = models.Account.objects.get(id=request.user.id)
-    except models.Account.DoesNotExist:
-        return response.Response(status_code=404)
-
-    serializer = serializers.AccountSerializer(user)
-    return response.Response(serializer.data)
+            del response_obj.data["refresh"]
+        response_obj["X-CSRFToken"] = request.COOKIES.get("csrftoken")
+        return super().finalize_response(request, response_obj, *args, **kwargs)
 
 
-
+# Registration endpoints
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
-    permission_classes = [permissions.AllowAny]  # сам регистрируется
+    permission_classes = [permissions.AllowAny]
 
-class AdminCreateView(generics.CreateAPIView):
-    serializer_class = AdminCreateSerializer
-    permission_classes = [IsSuperAdmin]  # только главный админ может создавать админов
 
-    def perform_create(self, serializer):
-        # явно выставляем роль ADMIN
-        serializer.save(role=Account.Role.ADMIN)
+class AdminRegisterView(generics.CreateAPIView):
+    serializer_class = AdminRegistrationSerializer
+    permission_classes = [IsSuperAdmin]
 
-class StudentViewSet(viewsets.ModelViewSet):
-    queryset = WorkerProfile.objects.all()
-    serializer_class = WorkerSerializer
-    permission_classes = (permissions.IsAuthenticated,)
 
-# Views для попыток, тестов и случаев
-class AttemptViewSet(viewsets.ModelViewSet):
-    queryset = Attempt.objects.all()
-    serializer_class = AttemptSerializer
+class SuperAdminRegisterView(generics.CreateAPIView):
+    serializer_class = SuperAdminRegistrationSerializer
+    permission_classes = [IsSuperAdmin]
 
-class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
 
-class CaseViewSet(viewsets.ModelViewSet):
-    queryset = Case.objects.all()
-    serializer_class = CaseSerializer
+# WorkerProfile viewset
+class WorkerProfileViewSet(viewsets.ModelViewSet):
+    queryset = WorkerProfile.objects.select_related("user").all()
+    serializer_class = WorkerProfileSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
 
-# Views для связанных данных (Parameters, Recommendations, Layers)
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or user.is_staff:
+            return super().get_queryset()
+        return WorkerProfile.objects.filter(user=user)
+
+
+# Parameter / Recommendation
 class ParameterViewSet(viewsets.ModelViewSet):
     queryset = Parameter.objects.all()
     serializer_class = ParameterSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
 
 class RecommendationViewSet(viewsets.ModelViewSet):
     queryset = Recommendation.objects.all()
     serializer_class = RecommendationSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
 
-class Layer1ViewSet(viewsets.ModelViewSet):
-    queryset = Layer1.objects.all()
-    serializer_class = Layer1Serializer
 
-class Layer2ViewSet(viewsets.ModelViewSet):
-    queryset = Layer2.objects.all()
-    serializer_class = Layer2Serializer
+# Case / Layer / Task / Question / Choice
+class CaseViewSet(viewsets.ModelViewSet):
+    queryset = Case.objects.all().prefetch_related("layers")
+    serializer_class = CaseSerializer
 
-class Layer3ViewSet(viewsets.ModelViewSet):
-    queryset = Layer3.objects.all()
-    serializer_class = Layer3Serializer
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.AllowAny()]
+        return [IsAdminOrSuperAdmin()]
 
-class Layer4ViewSet(viewsets.ModelViewSet):
-    queryset = Layer4.objects.all()
-    serializer_class = Layer4Serializer
+
+class LayerViewSet(viewsets.ModelViewSet):
+    queryset = Layer.objects.all().order_by("case_id", "number")
+    serializer_class = LayerSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.AllowAny()]
+        return [IsAdminOrSuperAdmin()]
+
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+
+class QuestionViewSet(viewsets.ModelViewSet):
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+
+class ChoiceViewSet(viewsets.ModelViewSet):
+    queryset = Choice.objects.all()
+
+    def get_serializer_class(self):
+        user = getattr(self.request, "user", None)
+        if user and (user.is_staff or user.is_superuser):
+            return ChoiceAdminSerializer
+        return ChoiceSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.AllowAny()]
+        return [IsAdminOrSuperAdmin()]
+
+
+# Attempt / AttemptAnswer
+class AttemptViewSet(viewsets.ModelViewSet):
+    queryset = Attempt.objects.all()
+    serializer_class = AttemptSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or user.is_staff:
+            return Attempt.objects.all()
+        return Attempt.objects.filter(worker=user)
+
+    def perform_create(self, serializer):
+        serializer.save(worker=self.request.user)
+
+    @decorators.action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated], url_path="answers")
+    def add_answer(self, request, pk=None):
+        attempt = self.get_object()
+        if attempt.worker != request.user and not (request.user.is_staff or request.user.is_superuser):
+            return response.Response({"detail": "No permission"}, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data.copy()
+        data["attempt"] = attempt.id
+        serializer = AttemptAnswerSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        ans = serializer.save()
+
+        total = attempt.answers.count()
+        correct = attempt.answers.filter(is_correct=True).count()
+        attempt.correct_count = correct
+        attempt.incorrect_count = max(0, total - correct)
+        attempt.score = (correct / total * 100.0) if total > 0 else 0.0
+        attempt.save(update_fields=["correct_count", "incorrect_count", "score"])
+        return response.Response(AttemptAnswerSerializer(ans).data, status=status.HTTP_201_CREATED)
+
+    @decorators.action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def finish(self, request, pk=None):
+        attempt = self.get_object()
+        if attempt.worker != request.user and not (request.user.is_staff or request.user.is_superuser):
+            return response.Response({"detail": "No permission"}, status=status.HTTP_403_FORBIDDEN)
+        attempt.finish()
+        return response.Response({"status": "finished", "score": attempt.score})
+
+
+# Current user
+@decorators.api_view(["GET"])
+@decorators.permission_classes([permissions.IsAuthenticated])
+def current_user_view(request):
+    serializer = AccountSerializer(request.user)
+    return response.Response(serializer.data)

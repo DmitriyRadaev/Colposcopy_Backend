@@ -1,46 +1,33 @@
-# urls.py
-
-
-from django.contrib import admin
+# main/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-
 from main import views
-from main.serializers import AdminCreateSerializer, WorkerSerializer
-from main.views import (
-    StudentViewSet, AttemptViewSet,
-    TaskViewSet, CaseViewSet, ParameterViewSet,
-    RecommendationViewSet, Layer1ViewSet,
-    Layer2ViewSet, Layer3ViewSet, Layer4ViewSet, AdminCreateView, WorkerRegisterView
-)
 
-
+# ----------------------------
+# РОУТЕРЫ (ViewSets)
+# ----------------------------
 router = DefaultRouter()
-router.register(r'students', StudentViewSet)
-router.register(r'attempts', AttemptViewSet)
-router.register(r'tasks', TaskViewSet)
-router.register(r'cases', CaseViewSet)
-router.register(r'parameters', ParameterViewSet)
-router.register(r'recommendations', RecommendationViewSet)
-router.register(r'layers1', Layer1ViewSet)
-router.register(r'layers2', Layer2ViewSet)
-router.register(r'layers3', Layer3ViewSet)
-router.register(r'layers4', Layer4ViewSet)
+router.register(r'cases', views.CaseViewSet, basename='case')
+router.register(r'layers', views.LayerViewSet, basename='layer')
+router.register(r'tasks', views.TaskViewSet, basename='task')
+router.register(r'attempts', views.AttemptViewSet, basename='attempt')
+router.register(r'parameters', views.ParameterViewSet, basename='parameter')
+router.register(r'recommendations', views.RecommendationViewSet, basename='recommendation')
 
-
-
-
+# ----------------------------
+# URL patterns
+# ----------------------------
 urlpatterns = [
-    # Включаем все URL-адреса, сгенерированные роутером
-    path('api/', include(router.urls)),
-    path('api/auth/login', views.loginView),
-    path('api/auth/register', views.registerView),
-    path('api/auth/refresh-token', views.CookieTokenRefreshView.as_view()),
-    path('api/auth/logout', views.logoutView),
-    path("api/auth/user", views.user),
+    # --- AUTH ---
+    path("api/auth/login/", views.loginView, name="login"),
+    path("api/auth/logout/", views.logoutView, name="logout"),
+    path("api/auth/refresh/", views.CookieTokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/user/", views.Account, name="account"),
 
-    path('api/admin/', admin.site.urls),
+    # --- REGISTRATION ---
+    path("api/auth/register/worker/", views.WorkerRegisterView.as_view(), name="worker_register"),
+    path("api/auth/register/admin/", views.AdminRegisterView.as_view(), name="admin_register"),
 
-    path('api/auth/admin_register',views.AdminCreateView.as_view()),
-    path('api/auth/worker_register',views.WorkerRegisterView.as_view()),
+    # --- MAIN API ---
+    path("api/", include(router.urls)),
 ]
