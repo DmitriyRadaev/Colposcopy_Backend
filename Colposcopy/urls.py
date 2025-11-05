@@ -2,6 +2,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from main import views
+from main.views import ChoiceViewSet
 
 # ----------------------------
 # РОУТЕРЫ (ViewSets)
@@ -13,7 +14,8 @@ router.register(r'tasks', views.TaskViewSet, basename='task')
 router.register(r'attempts', views.AttemptViewSet, basename='attempt')
 router.register(r'parameters', views.ParameterViewSet, basename='parameter')
 router.register(r'recommendations', views.RecommendationViewSet, basename='recommendation')
-
+router.register(r'questions', views.QuestionViewSet, basename='question')
+router.register(r'choices', ChoiceViewSet, basename='choice')
 # ----------------------------
 # URL patterns
 # ----------------------------

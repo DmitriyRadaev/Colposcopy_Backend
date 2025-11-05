@@ -136,9 +136,12 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
+    question = serializers.PrimaryKeyRelatedField(queryset=Question.objects.all())
+
     class Meta:
         model = Choice
-        fields = ("id", "text")
+        fields = ['id', 'question', 'text', 'is_correct']
+
 
 
 class ChoiceAdminSerializer(serializers.ModelSerializer):

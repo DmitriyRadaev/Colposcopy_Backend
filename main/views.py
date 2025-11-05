@@ -189,6 +189,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
 class ChoiceViewSet(viewsets.ModelViewSet):
     queryset = Choice.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
         user = getattr(self.request, "user", None)
@@ -200,6 +201,21 @@ class ChoiceViewSet(viewsets.ModelViewSet):
         if self.action in ("list", "retrieve"):
             return [permissions.AllowAny()]
         return [IsAdminOrSuperAdmin()]
+
+    def perform_create(self, serializer):
+        """
+        При создании Choice через API — обязательно связываем его с вопросом.
+        """
+        question_id = self.request.data.get("question")
+        if not question_id:
+            raise ValueError("Поле 'question' обязательно при создании варианта ответа")
+
+        try:
+            question = Question.objects.get(id=question_id)
+        except Question.DoesNotExist:
+            raise ValueError(f"Вопрос с id={question_id} не найден")
+
+        serializer.save(question=question)
 
 
 # Attempt / AttemptAnswer
