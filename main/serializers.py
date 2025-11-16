@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme, Answer
+    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme, Answer, PathologyImage
 )
 
 
@@ -105,20 +105,27 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 # Логика сайта
 
+class PathologyImageSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = PathologyImage
+            fields = ['id', 'image','pathology']
+
 class PathologySerializer(serializers.ModelSerializer):
+    images = PathologyImageSerializer(many=True, read_only=True)
+
     class Meta:
         model = Pathology
-        fields = ['id', 'name', 'description', 'cases']
+        fields = ['id', 'name', 'description', 'images']
 
 class LayerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Layer
-        fields = ['id', 'number', 'layer_img', 'layer_description']
+        fields = ['id', 'number', 'layer_img', 'case', 'layer_description']
 
 class SchemeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Scheme
-        fields = ['id', 'scheme_img', 'scheme_description_img']
+        fields = ['id', 'scheme_img', 'case', 'scheme_description_img']
 
 class AnswerSerializer(serializers.ModelSerializer):
     class Meta:

@@ -10,12 +10,12 @@ from django.shortcuts import get_object_or_404
 
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme
+    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme, PathologyImage
 )
 from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, TaskSerializer, QuestionSerializer,
-    PathologySerializer, SchemeSerializer
+    PathologySerializer, SchemeSerializer, PathologyImageSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -148,6 +148,9 @@ class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
     serializer_class = PathologySerializer
 
+class PathologyImageViewSet(viewsets.ModelViewSet):
+    queryset = PathologyImage.objects.all()
+    serializer_class = PathologyImageSerializer
 class CaseViewSet(viewsets.ModelViewSet):
     queryset = Case.objects.all()
     serializer_class = CaseSerializer

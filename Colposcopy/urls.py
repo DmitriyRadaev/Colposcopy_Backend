@@ -2,7 +2,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from main import views
-from main.views import PathologyViewSet, CaseViewSet, TaskViewSet, QuestionViewSet, LayerViewSet, SchemeViewSet
+from main.views import PathologyViewSet, CaseViewSet, TaskViewSet, QuestionViewSet, LayerViewSet, SchemeViewSet, \
+    PathologyImageViewSet
 
 # ----------------------------
 # РОУТЕРЫ (ViewSets)
@@ -14,6 +15,8 @@ router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
+router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
+
 # ----------------------------
 # URL patterns
 # ----------------------------
