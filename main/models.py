@@ -111,42 +111,41 @@ class WorkerProfile(models.Model):
         return f"Profile for {self.user.email}"
 
 
-# -------------------------
-# Parameters / Recommendations / Case / Layer / Task
-# -------------------------
-class Parameter(models.Model):
-    name = models.CharField(max_length=120)
 
-    def __str__(self):
-        return self.name
-
-
-class Recommendation(models.Model):
-    name = models.CharField(max_length=120)
-
-    def __str__(self):
-        return self.name
+class Pathology(models.Model):
+    name = models.CharField(max_length=255, null=False, blank=False)
+    description = models.TextField(null=False, blank=False)
 
 
 class Case(models.Model):
-
-    name = models.CharField(max_length=255, blank=True, null=True)
-    description = models.TextField(blank=True)
-    diagnosis = models.CharField(max_length=255, blank=True)
-    parameters = models.ManyToManyField(Parameter, blank=True, related_name="cases")
-    recommendations = models.ManyToManyField(Recommendation, blank=True, related_name="cases")
+    pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="cases")
+    name = models.CharField(max_length=255, blank=False, null=False)
     created_at = models.DateTimeField(auto_now_add=True)
-
     def __str__(self):
         return self.name or f"Case {self.pk}"
 
+class Task(models.Model):
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="tasks")
+    def __str__(self):
+        return f"{self.pk}"
+
+class Question(models.Model):
+
+    class qtype(models.TextChoices):
+        single = 'single'
+        multiple = 'multiple'
+
+    name = models.CharField(max_length=255, null=False, blank=False)
+    instruction = models.CharField(max_length=255, null=False, blank=False)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="questions")
+    qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
 
 class Layer(models.Model):
 
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="layers")
     number = models.PositiveIntegerField(default=1)
-    layer_img = models.ImageField(upload_to="case_layers/")
-    layer_description = models.CharField(max_length=255, blank=True)
+    layer_img = models.ImageField(upload_to="static/case_layers/")
+    layer_description = models.TextField(max_length=255, blank=True)
 
     class Meta:
         unique_together = ("case", "number")
@@ -155,108 +154,15 @@ class Layer(models.Model):
     def __str__(self):
         return f"{self.case} — Layer {self.number}"
 
+class Scheme(models.Model):
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="schemes")
+    scheme_img = models.ImageField(upload_to="static/schemes/scheme_img/")
+    scheme_description_img = models.ImageField(upload_to="static/schemes/scheme_description_img/")
 
-class Task(models.Model):
-    title = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="tasks")
-    order = models.PositiveIntegerField(default=0)
-
-    def __str__(self):
-        return f"{self.title} (Case: {self.case})"
-
-
-# -------------------------
-# Question / Choice (for tests)
-# -------------------------
-class Question(models.Model):
-
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="questions", null=True, blank=True)
-    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="questions", null=True, blank=True)
-    title = models.CharField(max_length=255)         # "Задание №1: Первичный осмотр"
-    instruction = models.TextField(blank=True)       # "Инструкция: Выберите один ответ."
-    multiple = models.BooleanField(default=False)    # multiple-choice?
-    order = models.PositiveIntegerField(default=0)
-
-    class Meta:
-        ordering = ("order",)
-
-    def __str__(self):
-        return self.title
-
-
-class Choice(models.Model):
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="choices")
-    text = models.CharField(max_length=1000)
+class Answer(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='answers')
+    text = models.CharField(max_length=255)
     is_correct = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.question.title[:40]} — {self.text[:60]}"
-
-
-# -------------------------
-# Attempt / AttemptAnswer
-# -------------------------
-class Attempt(models.Model):
-    worker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attempts")
-    task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True, related_name="attempts")
-    case = models.ForeignKey(Case, on_delete=models.SET_NULL, null=True, blank=True, related_name="attempts")
-
-    start_time = models.DateTimeField(default=timezone.now)
-    end_time = models.DateTimeField(null=True, blank=True)
-    duration = models.DurationField(null=True, blank=True)
-
-    correct_count = models.PositiveIntegerField(default=0)
-    incorrect_count = models.PositiveIntegerField(default=0)
-    score = models.FloatField(null=True, blank=True)  # e.g. percent 0..100
-
-    status = models.CharField(max_length=50, default="in_progress")  # in_progress / finished
-    details = models.JSONField(null=True, blank=True)  # optional detailed report
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def finish(self):
-        self.end_time = timezone.now()
-        if self.start_time and self.end_time:
-            self.duration = self.end_time - self.start_time
-        answers = self.answers.all()
-        total = answers.count()
-        correct = sum(1 for a in answers if a.is_correct)
-        self.correct_count = correct
-        self.incorrect_count = max(0, total - correct)
-        self.score = (correct / total * 100) if total > 0 else 0.0
-        self.status = "finished"
-        self.save()
-
-    def __str__(self):
-        return f"Attempt {self.pk} by {self.worker}"
-
-
-class AttemptAnswer(models.Model):
-    """
-    One selected answer inside an Attempt. For multiple selections, create multiple AttemptAnswer rows
-    (one per selected Choice) or extend with M2M if preferred.
-    """
-    attempt = models.ForeignKey(Attempt, on_delete=models.CASCADE, related_name="answers")
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    selected_choice = models.ForeignKey(Choice, on_delete=models.CASCADE, null=True, blank=True)
-    free_text = models.TextField(blank=True)  # for open answers if any
-    is_correct = models.BooleanField(default=False)
-    answered_at = models.DateTimeField(default=timezone.now)
-    time_spent = models.DurationField(null=True, blank=True)
-
-    def evaluate(self):
-        if self.selected_choice:
-            self.is_correct = bool(self.selected_choice.is_correct)
-        else:
-            self.is_correct = False
-        self.save()
-
-    def save(self, *args, **kwargs):
-        # auto-evaluate on save if possible
-        if self.selected_choice and self.selected_choice_id:
-            self.is_correct = bool(self.selected_choice.is_correct)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"Answer to Q{self.question.pk} (Attempt {self.attempt.pk})"
+        return self.text

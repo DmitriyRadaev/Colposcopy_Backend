@@ -10,21 +10,19 @@ from django.shortcuts import get_object_or_404
 
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Task, Question, Choice,
-    Parameter, Recommendation, Attempt
+    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme
 )
 from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, TaskSerializer, QuestionSerializer,
-    ChoiceSerializer, ChoiceAdminSerializer, ParameterSerializer, RecommendationSerializer,
-    AttemptSerializer, AttemptAnswerSerializer
+    PathologySerializer, SchemeSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
+
+#   Аутентификация
 Account = get_user_model()
 
-
-# JWT cookie helpers (from your previous code)
 def get_user_tokens(user):
     refresh = tokens.RefreshToken.for_user(user)
     return {"refresh_token": str(refresh), "access_token": str(refresh.access_token)}
@@ -112,7 +110,6 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
         return super().finalize_response(request, response_obj, *args, **kwargs)
 
 
-# Registration endpoints
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
     permission_classes = [permissions.AllowAny]
@@ -127,8 +124,6 @@ class SuperAdminRegisterView(generics.CreateAPIView):
     serializer_class = SuperAdminRegistrationSerializer
     permission_classes = [IsSuperAdmin]
 
-
-# WorkerProfile viewset
 class WorkerProfileViewSet(viewsets.ModelViewSet):
     queryset = WorkerProfile.objects.select_related("user").all()
     serializer_class = WorkerProfileSerializer
@@ -140,131 +135,35 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
             return super().get_queryset()
         return WorkerProfile.objects.filter(user=user)
 
-
-# Parameter / Recommendation
-class ParameterViewSet(viewsets.ModelViewSet):
-    queryset = Parameter.objects.all()
-    serializer_class = ParameterSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
-
-
-class RecommendationViewSet(viewsets.ModelViewSet):
-    queryset = Recommendation.objects.all()
-    serializer_class = RecommendationSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
-
-
-# Case / Layer / Task / Question / Choice
-class CaseViewSet(viewsets.ModelViewSet):
-    queryset = Case.objects.all().prefetch_related("layers")
-    serializer_class = CaseSerializer
-
-    def get_permissions(self):
-        if self.action in ("list", "retrieve"):
-            return [permissions.AllowAny()]
-        return [IsAdminOrSuperAdmin()]
-
-
-class LayerViewSet(viewsets.ModelViewSet):
-    queryset = Layer.objects.all().order_by("case_id", "number")
-    serializer_class = LayerSerializer
-
-    def get_permissions(self):
-        if self.action in ("list", "retrieve"):
-            return [permissions.AllowAny()]
-        return [IsAdminOrSuperAdmin()]
-
-
-class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
-
-
-class QuestionViewSet(viewsets.ModelViewSet):
-    queryset = Question.objects.all()
-    serializer_class = QuestionSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
-
-
-class ChoiceViewSet(viewsets.ModelViewSet):
-    queryset = Choice.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_serializer_class(self):
-        user = getattr(self.request, "user", None)
-        if user and (user.is_staff or user.is_superuser):
-            return ChoiceAdminSerializer
-        return ChoiceSerializer
-
-    def get_permissions(self):
-        if self.action in ("list", "retrieve"):
-            return [permissions.AllowAny()]
-        return [IsAdminOrSuperAdmin()]
-
-    def perform_create(self, serializer):
-        """
-        При создании Choice через API — обязательно связываем его с вопросом.
-        """
-        question_id = self.request.data.get("question")
-        if not question_id:
-            raise ValueError("Поле 'question' обязательно при создании варианта ответа")
-
-        try:
-            question = Question.objects.get(id=question_id)
-        except Question.DoesNotExist:
-            raise ValueError(f"Вопрос с id={question_id} не найден")
-
-        serializer.save(question=question)
-
-
-# Attempt / AttemptAnswer
-class AttemptViewSet(viewsets.ModelViewSet):
-    queryset = Attempt.objects.all()
-    serializer_class = AttemptSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_superuser or user.is_staff:
-            return Attempt.objects.all()
-        return Attempt.objects.filter(worker=user)
-
-    def perform_create(self, serializer):
-        serializer.save(worker=self.request.user)
-
-    @decorators.action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated], url_path="answers")
-    def add_answer(self, request, pk=None):
-        attempt = self.get_object()
-        if attempt.worker != request.user and not (request.user.is_staff or request.user.is_superuser):
-            return response.Response({"detail": "No permission"}, status=status.HTTP_403_FORBIDDEN)
-
-        data = request.data.copy()
-        data["attempt"] = attempt.id
-        serializer = AttemptAnswerSerializer(data=data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        ans = serializer.save()
-
-        total = attempt.answers.count()
-        correct = attempt.answers.filter(is_correct=True).count()
-        attempt.correct_count = correct
-        attempt.incorrect_count = max(0, total - correct)
-        attempt.score = (correct / total * 100.0) if total > 0 else 0.0
-        attempt.save(update_fields=["correct_count", "incorrect_count", "score"])
-        return response.Response(AttemptAnswerSerializer(ans).data, status=status.HTTP_201_CREATED)
-
-    @decorators.action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
-    def finish(self, request, pk=None):
-        attempt = self.get_object()
-        if attempt.worker != request.user and not (request.user.is_staff or request.user.is_superuser):
-            return response.Response({"detail": "No permission"}, status=status.HTTP_403_FORBIDDEN)
-        attempt.finish()
-        return response.Response({"status": "finished", "score": attempt.score})
-
-
-# Current user
 @decorators.api_view(["GET"])
 @decorators.permission_classes([permissions.IsAuthenticated])
 def current_user_view(request):
     serializer = AccountSerializer(request.user)
     return response.Response(serializer.data)
+
+
+#  Логика сайта
+
+class PathologyViewSet(viewsets.ModelViewSet):
+    queryset = Pathology.objects.all()
+    serializer_class = PathologySerializer
+
+class CaseViewSet(viewsets.ModelViewSet):
+    queryset = Case.objects.all()
+    serializer_class = CaseSerializer
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+
+class QuestionViewSet(viewsets.ModelViewSet):
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+
+class LayerViewSet(viewsets.ModelViewSet):
+    queryset = Layer.objects.all()
+    serializer_class = LayerSerializer
+
+class SchemeViewSet(viewsets.ModelViewSet):
+    queryset = Scheme.objects.all()
+    serializer_class = SchemeSerializer
