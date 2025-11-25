@@ -108,14 +108,9 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 class PathologyImageSerializer(serializers.ModelSerializer):
         class Meta:
             model = PathologyImage
-            fields = ['id', 'image','pathology']
+            fields = ['id', 'image','pathology'   ]
 
-class PathologySerializer(serializers.ModelSerializer):
-    images = PathologyImageSerializer(many=True, read_only=True)
 
-    class Meta:
-        model = Pathology
-        fields = ['id', 'name', 'description', 'images']
 
 class LayerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -172,3 +167,9 @@ class CaseSerializer(serializers.ModelSerializer):
         model = Case
         fields = ['id', 'name', 'pathology', 'created_at', 'layers', 'schemes', 'tasks']
 
+class PathologySerializer(serializers.ModelSerializer):
+    images = PathologyImageSerializer(many=True, read_only=True)
+    cases = CaseSerializer(many=True, read_only=True)
+    class Meta:
+        model = Pathology
+        fields = ['id', 'name', 'description', 'images','cases']
