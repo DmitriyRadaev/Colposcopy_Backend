@@ -1,20 +1,24 @@
-# serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme, Answer, PathologyImage
+    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme,
+    Answer, PathologyImage, Attempt, AttemptAnswer
 )
 
-
-
-
-# Аутентификация
+# ---------------------
+# ACCOUNT
+# ---------------------
 Account = get_user_model()
+
 
 class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
-        fields = ("id", "email", "username", "is_active", "is_staff", "is_superuser", "created_at", "updated_at")
+        fields = (
+            "id", "email", "username",
+            "is_active", "is_staff", "is_superuser",
+            "created_at", "updated_at"
+        )
         read_only_fields = ("id", "created_at", "updated_at")
 
 
@@ -57,18 +61,13 @@ class AdminRegistrationSerializer(serializers.ModelSerializer):
         fields = ("email", "username", "password", "password2")
 
     def validate(self, attrs):
-        if attrs.get("password") != attrs.get("password2"):
+        if attrs["password"] != attrs["password2"]:
             raise serializers.ValidationError({"password": "Пароли не совпадают"})
         return attrs
 
     def create(self, validated_data):
         validated_data.pop("password2")
-        user = Account.objects.create_admin(
-            email=validated_data["email"],
-            username=validated_data["username"],
-            password=validated_data["password"]
-        )
-        return user
+        return Account.objects.create_admin(**validated_data)
 
 
 class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
@@ -80,36 +79,31 @@ class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
         fields = ("email", "username", "password", "password2")
 
     def validate(self, attrs):
-        if attrs.get("password") != attrs.get("password2"):
+        if attrs["password"] != attrs["password2"]:
             raise serializers.ValidationError({"password": "Пароли не совпадают"})
         return attrs
 
     def create(self, validated_data):
         validated_data.pop("password2")
-        user = Account.objects.create_superuser(
-            email=validated_data["email"],
-            username=validated_data["username"],
-            password=validated_data["password"]
-        )
-        return user
+        return Account.objects.create_superuser(**validated_data)
 
 
 class WorkerProfileSerializer(serializers.ModelSerializer):
     user = AccountSerializer(read_only=True)
+
     class Meta:
         model = WorkerProfile
         fields = ("id", "user", "place_of_work", "position")
 
 
-
-
-# Логика сайта
+# ---------------------
+# SITE LOGIC SERIALIZERS
+# ---------------------
 
 class PathologyImageSerializer(serializers.ModelSerializer):
-        class Meta:
-            model = PathologyImage
-            fields = ['id', 'image','pathology'   ]
-
+    class Meta:
+        model = PathologyImage
+        fields = ['id', 'image', 'pathology']
 
 
 class LayerSerializer(serializers.ModelSerializer):
@@ -117,15 +111,18 @@ class LayerSerializer(serializers.ModelSerializer):
         model = Layer
         fields = ['id', 'number', 'layer_img', 'case', 'layer_description']
 
+
 class SchemeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Scheme
         fields = ['id', 'scheme_img', 'case', 'scheme_description_img']
 
+
 class AnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Answer
         fields = ['id', 'text', 'is_correct']
+
 
 class QuestionSerializer(serializers.ModelSerializer):
     answers = AnswerSerializer(many=True)
@@ -140,6 +137,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         for ans in answers_data:
             Answer.objects.create(question=question, **ans)
         return question
+
 
 class TaskSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
@@ -158,6 +156,7 @@ class TaskSerializer(serializers.ModelSerializer):
                 Answer.objects.create(question=question, **ans)
         return task
 
+
 class CaseSerializer(serializers.ModelSerializer):
     layers = LayerSerializer(many=True, read_only=True)
     schemes = SchemeSerializer(many=True, read_only=True)
@@ -167,9 +166,36 @@ class CaseSerializer(serializers.ModelSerializer):
         model = Case
         fields = ['id', 'name', 'pathology', 'created_at', 'layers', 'schemes', 'tasks']
 
+
 class PathologySerializer(serializers.ModelSerializer):
     images = PathologyImageSerializer(many=True, read_only=True)
     cases = CaseSerializer(many=True, read_only=True)
+
     class Meta:
         model = Pathology
-        fields = ['id', 'name', 'description', 'images','cases']
+        fields = ['id', 'name', 'description', 'images', 'cases']
+
+
+# ---------------------
+# ATTEMPT LOGIC
+# ---------------------
+
+class AttemptAnswerDetailSerializer(serializers.ModelSerializer):
+    question = serializers.CharField(source='question.name', read_only=True)
+    selected_answers = serializers.PrimaryKeyRelatedField(queryset=Answer.objects.all(), many=True)
+    correct_answers = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AttemptAnswer
+        fields = ['id', 'question', 'selected_answers', 'correct_answers', 'is_correct']
+
+    def get_correct_answers(self, obj):
+        return list(obj.question.answers.filter(is_correct=True).values_list('id', flat=True))
+
+
+class AttemptSerializer(serializers.ModelSerializer):
+    answers = AttemptAnswerDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Attempt
+        fields = ['id', 'worker', 'cases', 'start_time', 'end_time', 'created_at', 'answers']

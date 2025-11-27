@@ -1,4 +1,3 @@
-# models.py
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -23,7 +22,6 @@ class AccountManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, username, password=None, **kwargs):
-        # superadmin — главный админ
         user = self.create_user(email=email, username=username, password=password, role=Account.Role.SUPERADMIN, **kwargs)
         user.is_staff = True
         user.is_superuser = True
@@ -37,10 +35,8 @@ class AccountManager(BaseUserManager):
         return user
 
     def create_worker(self, email, username, password=None, place_of_work=None, position=None, **kwargs):
-
         user = self.create_user(email=email, username=username, password=password, role=Account.Role.WORKER, **kwargs)
 
-        # Создаём профиль, если переданы данные (динамический импорт, чтобы избежать циклов)
         if place_of_work is not None or position is not None:
             WorkerProfile = self.model._meta.apps.get_model(self.model._meta.app_label, 'WorkerProfile')
             WorkerProfile.objects.update_or_create(user=user, defaults={
@@ -60,9 +56,8 @@ class Account(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=50, blank=False, null=False)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.WORKER)
 
-    # legacy / access flags
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)     # даёт доступ в admin-site
+    is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -111,30 +106,42 @@ class WorkerProfile(models.Model):
         return f"Profile for {self.user.email}"
 
 
-
+# -------------------------
+# Pathology / Case / Task / Question / Answer
+# -------------------------
 class Pathology(models.Model):
     name = models.CharField(max_length=255, null=False, blank=False)
     description = models.TextField(null=False, blank=False)
 
+    def __str__(self):
+        return self.name
+
 
 class PathologyImage(models.Model):
-    pathology = models.ForeignKey(Pathology,on_delete=models.CASCADE,related_name="images")
+    pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="images")
     image = models.ImageField(upload_to="static/pathology_img/", null=False, blank=False)
+
+    def __str__(self):
+        return f"Image for {self.pathology}"
+
 
 class Case(models.Model):
     pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="cases")
     name = models.CharField(max_length=255, blank=False, null=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
     def __str__(self):
         return self.name or f"Case {self.pk}"
 
+
 class Task(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="tasks")
+    # можно добавить название/порядок, если нужно
     def __str__(self):
-        return f"{self.pk}"
+        return f"Task {self.pk} for {self.case}"
+
 
 class Question(models.Model):
-
     class qtype(models.TextChoices):
         single = 'single'
         multiple = 'multiple'
@@ -144,8 +151,11 @@ class Question(models.Model):
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="questions")
     qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
 
-class Layer(models.Model):
+    def __str__(self):
+        return self.name
 
+
+class Layer(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="layers")
     number = models.PositiveIntegerField(default=1)
     layer_img = models.ImageField(upload_to="static/case_layers/")
@@ -158,10 +168,15 @@ class Layer(models.Model):
     def __str__(self):
         return f"{self.case} — Layer {self.number}"
 
+
 class Scheme(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="schemes")
     scheme_img = models.ImageField(upload_to="static/schemes/scheme_img/")
     scheme_description_img = models.ImageField(upload_to="static/schemes/scheme_description_img/")
+
+    def __str__(self):
+        return f"Scheme for {self.case}"
+
 
 class Answer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='answers')
@@ -170,3 +185,27 @@ class Answer(models.Model):
 
     def __str__(self):
         return self.text
+
+
+# -------------------------
+# Attempts / Responses
+# -------------------------
+class Attempt(models.Model):
+    worker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attempts")
+    cases = models.ManyToManyField(Case, related_name="attempts")
+    start_time = models.DateTimeField(default=timezone.now)
+    end_time = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Attempt {self.pk} by {self.worker.email}"
+
+
+class AttemptAnswer(models.Model):
+    attempt = models.ForeignKey(Attempt, on_delete=models.CASCADE, related_name="attempt_answers")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    selected_answers = models.ManyToManyField(Answer, blank=True)
+    is_correct = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Answer for Question {self.question.pk} in Attempt {self.attempt.pk}"
