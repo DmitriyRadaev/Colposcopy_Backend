@@ -1,4 +1,6 @@
 # urls.py
+from os.path import basename
+
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from main import views
@@ -9,7 +11,8 @@ from main.views import (
     LayerViewSet,
     SchemeViewSet,
     PathologyImageViewSet,
-    SubmitTestView  # Новый view для тестирования
+    SubmitTestView, PathologyListInfoView,
+    ClinicalCaseListView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -18,11 +21,12 @@ from main.views import (
 router = DefaultRouter()
 router.register(r'pathologies', PathologyViewSet, basename='pathology')
 router.register(r'cases', CaseViewSet, basename='case')
-# router.register(r'tasks', TaskViewSet) — УДАЛЕНО
 router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
+
+
 
 # ----------------------------
 # URL patterns
@@ -43,6 +47,11 @@ urlpatterns = [
     # Эндпоинт для отправки результатов теста (POST запрос)
     path("api/test/submit/", SubmitTestView.as_view(), name="submit_test"),
 
+
+
     # --- MAIN API (CRUD) ---
     path("api/", include(router.urls)),
+    path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
+    path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
+
 ]

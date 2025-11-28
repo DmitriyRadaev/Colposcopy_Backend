@@ -8,7 +8,6 @@ from django.conf import settings
 from django.middleware import csrf
 from rest_framework import exceptions as rest_exceptions
 from django.contrib.auth import get_user_model
-from django.shortcuts import get_object_or_404
 
 from .models import (
     WorkerProfile, Case, Layer, Question, Pathology, Scheme, PathologyImage, Answer, TestResult
@@ -17,7 +16,7 @@ from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
-    TestSubmissionSerializer, TestResultSerializer
+    TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -267,3 +266,33 @@ class SubmitTestView(APIView):
 
         # 8. Возвращаем результат клиенту
         return response.Response(TestResultSerializer(result).data, status=status.HTTP_201_CREATED)
+
+
+class PathologyListInfoView(generics.ListAPIView):
+    queryset = Pathology.objects.all()
+    serializer_class = PathologyListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+
+        return response.Response({
+            "items": serializer.data
+        })
+
+
+class ClinicalCaseListView(generics.ListAPIView):
+    # Оптимизация запроса к БД
+    queryset = Pathology.objects.prefetch_related("cases").all()
+    serializer_class = ClinicalCaseInfoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+
+        # Оборачиваем в items согласно GetClinicalCasesInfoDto
+        return response.Response({
+            "items": serializer.data
+        })

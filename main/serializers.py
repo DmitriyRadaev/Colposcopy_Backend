@@ -256,3 +256,27 @@ class TestResultSerializer(serializers.ModelSerializer):
         model = TestResult
         fields = ['id', 'user', 'pathology', 'pathology_name', 'score', 'max_score', 'percentage', 'grade',
                   'created_at']
+
+
+
+class PathologyListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Pathology
+        fields = ("id", "name")
+
+
+# Вспомогательный сериализатор, возвращает только ID кейса
+class CaseIdSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Case
+        fields = ("id",)
+
+# Основной сериализатор для этого эндпоинта
+class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
+    # Используем вложенный сериализатор для поля cases
+    # read_only=True — так как мы только отдаем данные
+    cases = CaseIdSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Pathology
+        fields = ("id", "name", "cases")
