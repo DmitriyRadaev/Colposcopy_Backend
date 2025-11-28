@@ -161,7 +161,7 @@ class Pathology(models.Model):
 
 class PathologyImage(models.Model):
     pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="images")
-    image = models.ImageField(upload_to="static/pathology_img/", null=False, blank=False)
+    image = models.ImageField(upload_to="pathology_img/", null=False, blank=False)
 
 
 class Case(models.Model):
@@ -176,7 +176,7 @@ class Case(models.Model):
 class Layer(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="layers")
     number = models.PositiveIntegerField(default=1)
-    layer_img = models.ImageField(upload_to="static/case_layers/")
+    layer_img = models.ImageField(upload_to="case_layers/")
     layer_description = models.TextField(blank=True)
 
     class Meta:
@@ -189,8 +189,8 @@ class Layer(models.Model):
 
 class Scheme(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="schemes")
-    scheme_img = models.ImageField(upload_to="static/schemes/scheme_img/")
-    scheme_description_img = models.ImageField(upload_to="static/schemes/scheme_description_img/")
+    scheme_img = models.ImageField(upload_to="schemes/scheme_img/")
+    scheme_description_img = models.ImageField(upload_to="schemes/scheme_description_img/")
 
 
 # -------------------------------------------------------------------------

@@ -1,8 +1,12 @@
 # urls.py
 from os.path import basename
 
-from django.urls import path, include
+from django.conf.urls.static import static
+from django.urls import path, include, re_path
+from django.views.static import serve
 from rest_framework.routers import DefaultRouter
+
+from django.conf import settings
 from main import views
 from main.views import (
     PathologyViewSet,
@@ -53,6 +57,11 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
-    path('atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
+    path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
+    re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
+    re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
 
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
