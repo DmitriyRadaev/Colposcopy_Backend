@@ -1,27 +1,32 @@
 # views.py
 from rest_framework import viewsets, generics, permissions, response, decorators, status
-from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, exceptions as jwt_exceptions
+from rest_framework.views import APIView
+from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
+    exceptions as jwt_exceptions
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware import csrf
 from rest_framework import exceptions as rest_exceptions
-
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 
-from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Task, Question, Pathology, Scheme, PathologyImage
+    WorkerProfile, Case, Layer, Question, Pathology, Scheme, PathologyImage, Answer, TestResult
 )
 from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
-    WorkerProfileSerializer, CaseSerializer, LayerSerializer, TaskSerializer, QuestionSerializer,
-    PathologySerializer, SchemeSerializer, PathologyImageSerializer
+    WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
+    PathologySerializer, SchemeSerializer, PathologyImageSerializer,
+    TestSubmissionSerializer, TestResultSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
+# -------------------------------------------------------------------------
+# АУТЕНТИФИКАЦИЯ (JWT в Cookies)
+# -------------------------------------------------------------------------
 
-#   Аутентификация
 Account = get_user_model()
+
 
 def get_user_tokens(user):
     refresh = tokens.RefreshToken.for_user(user)
@@ -110,6 +115,17 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
         return super().finalize_response(request, response_obj, *args, **kwargs)
 
 
+@decorators.api_view(["GET"])
+@decorators.permission_classes([permissions.IsAuthenticated])
+def current_user_view(request):
+    serializer = AccountSerializer(request.user)
+    return response.Response(serializer.data)
+
+
+# -------------------------------------------------------------------------
+# РЕГИСТРАЦИЯ И ПРОФИЛИ
+# -------------------------------------------------------------------------
+
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
     permission_classes = [permissions.AllowAny]
@@ -124,6 +140,7 @@ class SuperAdminRegisterView(generics.CreateAPIView):
     serializer_class = SuperAdminRegistrationSerializer
     permission_classes = [IsSuperAdmin]
 
+
 class WorkerProfileViewSet(viewsets.ModelViewSet):
     queryset = WorkerProfile.objects.select_related("user").all()
     serializer_class = WorkerProfileSerializer
@@ -135,38 +152,118 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
             return super().get_queryset()
         return WorkerProfile.objects.filter(user=user)
 
-@decorators.api_view(["GET"])
-@decorators.permission_classes([permissions.IsAuthenticated])
-def current_user_view(request):
-    serializer = AccountSerializer(request.user)
-    return response.Response(serializer.data)
 
-
-#  Логика сайта
+# -------------------------------------------------------------------------
+# ОСНОВНАЯ ЛОГИКА (CRUD)
+# -------------------------------------------------------------------------
 
 class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
     serializer_class = PathologySerializer
 
+
 class PathologyImageViewSet(viewsets.ModelViewSet):
     queryset = PathologyImage.objects.all()
     serializer_class = PathologyImageSerializer
+
+
 class CaseViewSet(viewsets.ModelViewSet):
     queryset = Case.objects.all()
     serializer_class = CaseSerializer
 
-class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
+
+# TaskViewSet удален, так как модель Task удалена.
+# Вопросы теперь привязаны напрямую к Case.
 
 class QuestionViewSet(viewsets.ModelViewSet):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
 
+
 class LayerViewSet(viewsets.ModelViewSet):
     queryset = Layer.objects.all()
     serializer_class = LayerSerializer
 
+
 class SchemeViewSet(viewsets.ModelViewSet):
     queryset = Scheme.objects.all()
     serializer_class = SchemeSerializer
+
+
+# -------------------------------------------------------------------------
+# ЛОГИКА ТЕСТИРОВАНИЯ
+# -------------------------------------------------------------------------
+
+class SubmitTestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        # 1. Валидация входных данных (ids патологии, кейсов и ответов)
+        serializer = TestSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        pathology_id = serializer.validated_data['pathology_id']
+        case_ids = serializer.validated_data['case_ids']
+        user_answer_ids = serializer.validated_data['answer_ids']  # Список ID ответов пользователя
+
+        # 2. Получаем выбранные кейсы, чтобы убедиться, что они существуют
+        selected_cases = Case.objects.filter(id__in=case_ids, pathology_id=pathology_id)
+        if not selected_cases.exists():
+            return response.Response(
+                {"detail": "Не найдены кейсы для указанной патологии."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 3. Считаем MAX балл (Знаменатель)
+        # Находим ВСЕ правильные ответы (is_correct=True), которые существуют
+        # внутри вопросов, привязанных к выбранным кейсам.
+        correct_answers_db = Answer.objects.filter(
+            question__case__in=selected_cases,
+            is_correct=True
+        )
+        max_score = correct_answers_db.count()
+
+        # 4. Считаем балл пользователя (Числитель)
+        # Пользователь получает балл, если ID его ответа совпадает с правильным ответом из БД.
+        # Используем set для уникальности ID, чтобы исключить дубли.
+        user_answer_ids_set = set(user_answer_ids)
+
+        # Фильтруем список правильных ответов базы данных: оставляем только те,
+        # ID которых есть в ответах пользователя.
+        user_score = correct_answers_db.filter(id__in=user_answer_ids_set).count()
+
+        # 5. Вычисляем процент
+        if max_score > 0:
+            percentage = (user_score / max_score) * 100
+        else:
+            percentage = 0  # Если вопросов/правильных ответов в кейсах не было вообще
+
+        # Округляем до 1 знака (можно до целого, как удобнее)
+        percentage = round(percentage, 1)
+
+        # 6. Определяем оценку согласно ТЗ
+        # 0-64% Неудовлетворительно
+        # 65-74% Удовлетворительно
+        # 75-84% Хорошо
+        # 85-100% Отлично
+        if percentage >= 85:
+            grade = "Отлично"
+        elif percentage >= 75:
+            grade = "Хорошо"
+        elif percentage >= 65:
+            grade = "Удовлетворительно"
+        else:
+            grade = "Неудовлетворительно"
+
+        # 7. Сохраняем результат в историю
+        result = TestResult.objects.create(
+            user=request.user,
+            pathology_id=pathology_id,
+            score=user_score,
+            max_score=max_score,
+            percentage=percentage,
+            grade=grade
+        )
+
+        # 8. Возвращаем результат клиенту
+        return response.Response(TestResultSerializer(result).data, status=status.HTTP_201_CREATED)

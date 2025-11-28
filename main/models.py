@@ -1,50 +1,82 @@
 # models.py
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 
 
-# -------------------------
-# Account / AccountManager
-# -------------------------
+# -------------------------------------------------------------------------
+# ACCOUNT / AUTHENTICATION
+# -------------------------------------------------------------------------
 class AccountManager(BaseUserManager):
-    def create_user(self, email, username, password=None, role="WORKER", **kwargs):
+    def create_user(self, email, name, surname, patronymic=None, password=None, role="WORKER", **kwargs):
         if not email:
             raise ValueError("Email is required")
-        if not username:
-            raise ValueError("Username is required")
+        if not name:
+            raise ValueError("Name is required")
+        if not surname:
+            raise ValueError("Surname is required")
 
         email = self.normalize_email(email)
-        user = self.model(email=email, username=username, role=role, **kwargs)
+        # Сохраняем name, surname, patronymic
+        user = self.model(
+            email=email,
+            name=name,
+            surname=surname,
+            patronymic=patronymic or "",  # Если None, пишем пустую строку
+            role=role,
+            **kwargs
+        )
         if password:
             user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email, username, password=None, **kwargs):
-        # superadmin — главный админ
-        user = self.create_user(email=email, username=username, password=password, role=Account.Role.SUPERADMIN, **kwargs)
+    def create_superuser(self, email, name, surname, password=None, **kwargs):
+        # Передаем параметры в create_user
+        user = self.create_user(
+            email=email,
+            name=name,
+            surname=surname,
+            password=password,
+            role=Account.Role.SUPERADMIN,
+            **kwargs
+        )
         user.is_staff = True
         user.is_superuser = True
         user.save(using=self._db)
         return user
 
-    def create_admin(self, email, username, password=None, **kwargs):
-        user = self.create_user(email=email, username=username, password=password, role=Account.Role.ADMIN, **kwargs)
+    def create_admin(self, email, name, surname, password=None, **kwargs):
+        user = self.create_user(
+            email=email,
+            name=name,
+            surname=surname,
+            password=password,
+            role=Account.Role.ADMIN,
+            **kwargs
+        )
         user.is_staff = True
         user.save(using=self._db)
         return user
 
-    def create_worker(self, email, username, password=None, place_of_work=None, position=None, **kwargs):
+    def create_worker(self, email, name, surname, patronymic=None, password=None, work=None, position=None,
+                      **kwargs):
+        user = self.create_user(
+            email=email,
+            name=name,
+            surname=surname,
+            patronymic=patronymic,
+            password=password,
+            role=Account.Role.WORKER,
+            **kwargs
+        )
 
-        user = self.create_user(email=email, username=username, password=password, role=Account.Role.WORKER, **kwargs)
-
-        # Создаём профиль, если переданы данные (динамический импорт, чтобы избежать циклов)
-        if place_of_work is not None or position is not None:
-            WorkerProfile = self.model._meta.apps.get_model(self.model._meta.app_label, 'WorkerProfile')
+        if work is not None or position is not None:
+            # Получаем модель WorkerProfile динамически, чтобы избежать циклического импорта, если они в одном файле
+            # или просто импортируем, если структура позволяет.
+            # Здесь предполагаем, что они в одном файле models.py
             WorkerProfile.objects.update_or_create(user=user, defaults={
-                "place_of_work": place_of_work or "",
+                "work": work or "",
                 "position": position or ""
             })
         return user
@@ -57,12 +89,17 @@ class Account(AbstractBaseUser, PermissionsMixin):
         WORKER = "WORKER", "Работник"
 
     email = models.EmailField(null=False, blank=False, unique=True)
-    username = models.CharField(max_length=50, blank=False, null=False)
+
+    # --- Новые поля вместо username ---
+    name = models.CharField(max_length=50, blank=False, null=False, verbose_name="Имя")
+    surname = models.CharField(max_length=50, blank=False, null=False, verbose_name="Фамилия")
+    patronymic = models.CharField(max_length=50, blank=True, default="", verbose_name="Отчество")
+    # ----------------------------------
+
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.WORKER)
 
-    # legacy / access flags
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)     # даёт доступ в admin-site
+    is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -71,10 +108,13 @@ class Account(AbstractBaseUser, PermissionsMixin):
     objects = AccountManager()
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["username"]
+    # Поля, обязательные при создании суперюзера через консоль (кроме email и пароля)
+    REQUIRED_FIELDS = ["name", "surname"]
 
     def __str__(self):
-        return f"{self.username} ({self.role})"
+        # Красивое отображение ФИО
+        full_name = f"{self.surname} {self.name} {self.patronymic}".strip()
+        return f"{full_name} ({self.role})"
 
     def has_perm(self, perm, obj=None):
         if self.is_superuser or self.role == Account.Role.SUPERADMIN:
@@ -98,54 +138,42 @@ class Account(AbstractBaseUser, PermissionsMixin):
     def is_worker(self):
         return self.role == Account.Role.WORKER
 
-
-# -------------------------
-# Worker profile
-# -------------------------
 class WorkerProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="worker_profile")
-    place_of_work = models.CharField(max_length=255, blank=True, null=False)
+    work = models.CharField(max_length=255, blank=True, null=False)
     position = models.CharField(max_length=255, blank=True, null=False)
 
     def __str__(self):
         return f"Profile for {self.user.email}"
 
 
+# -------------------------------------------------------------------------
+# MAIN CONTENT MODELS
+# -------------------------------------------------------------------------
 
 class Pathology(models.Model):
     name = models.CharField(max_length=255, null=False, blank=False)
     description = models.TextField(null=False, blank=False)
 
+    def __str__(self):
+        return self.name
+
 
 class PathologyImage(models.Model):
-    pathology = models.ForeignKey(Pathology,on_delete=models.CASCADE,related_name="images")
+    pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="images")
     image = models.ImageField(upload_to="static/pathology_img/", null=False, blank=False)
+
 
 class Case(models.Model):
     pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="cases")
     name = models.CharField(max_length=255, blank=False, null=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
     def __str__(self):
         return self.name or f"Case {self.pk}"
 
-class Task(models.Model):
-    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="tasks")
-    def __str__(self):
-        return f"{self.pk}"
-
-class Question(models.Model):
-
-    class qtype(models.TextChoices):
-        single = 'single'
-        multiple = 'multiple'
-
-    name = models.CharField(max_length=255, null=False, blank=False)
-    instruction = models.CharField(max_length=255, null=False, blank=False)
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="questions")
-    qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
 
 class Layer(models.Model):
-
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="layers")
     number = models.PositiveIntegerField(default=1)
     layer_img = models.ImageField(upload_to="static/case_layers/")
@@ -158,10 +186,32 @@ class Layer(models.Model):
     def __str__(self):
         return f"{self.case} — Layer {self.number}"
 
+
 class Scheme(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="schemes")
     scheme_img = models.ImageField(upload_to="static/schemes/scheme_img/")
     scheme_description_img = models.ImageField(upload_to="static/schemes/scheme_description_img/")
+
+
+# -------------------------------------------------------------------------
+# TESTING LOGIC
+# -------------------------------------------------------------------------
+
+class Question(models.Model):
+    class qtype(models.TextChoices):
+        single = 'single'
+        multiple = 'multiple'
+
+    # Changed: Linked directly to Case (removed Task model)
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="questions")
+
+    name = models.CharField(max_length=255, null=False, blank=False)
+    instruction = models.CharField(max_length=255, null=False, blank=False)
+    qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
+
+    def __str__(self):
+        return self.name
+
 
 class Answer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='answers')
@@ -170,3 +220,24 @@ class Answer(models.Model):
 
     def __str__(self):
         return self.text
+
+
+class TestResult(models.Model):
+    """
+    Модель для хранения истории прохождения тестов пользователями.
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="test_results")
+    pathology = models.ForeignKey(Pathology, on_delete=models.SET_NULL, null=True, related_name="test_results")
+
+    # Статистика попытки
+    score = models.IntegerField(default=0)  # Количество правильных ответов пользователя
+    max_score = models.IntegerField(default=0)  # Общее количество правильных ответов в тесте
+    percentage = models.FloatField(default=0.0)  # Процент прохождения
+
+    # Текстовая оценка (Отлично, Хорошо, Удовлетворительно, Неудовлетворительно)
+    grade = models.CharField(max_length=50)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user} - {self.percentage}% ({self.grade})"
