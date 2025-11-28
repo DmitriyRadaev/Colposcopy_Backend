@@ -16,7 +16,7 @@ from main.views import (
     SchemeViewSet,
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
-    ClinicalCaseListView, PathologyDetailView  # Новый view для тестирования
+    ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -24,7 +24,7 @@ from main.views import (
 # ----------------------------
 router = DefaultRouter()
 router.register(r'pathologies', PathologyViewSet, basename='pathology')
-router.register(r'cases', CaseViewSet, basename='case')
+# router.register(r'cases', CaseViewSet, basename='case')
 router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
@@ -58,8 +58,10 @@ urlpatterns = [
     path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
     path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
+    path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
+
 
 ]
 

@@ -295,3 +295,59 @@ class PathologyDetailInfoSerializer(serializers.ModelSerializer):
                 url = request.build_absolute_uri(img.image.url) if request else img.image.url
                 urls.append(url)
         return urls
+
+
+class CaseDetailInfoSerializer(serializers.ModelSerializer):
+    imgContainer = serializers.SerializerMethodField()
+    descriptionContainer = serializers.SerializerMethodField()
+    imgSchema = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Case
+        fields = ("id", "imgContainer", "imgSchema", "descriptionContainer")
+
+    def get_imgContainer(self, obj):
+        request = self.context.get('request')
+        urls = []
+
+        # 1. Добавляем картинки слоев (Layers)
+        layers = obj.layers.all().order_by('number')
+        for layer in layers:
+            if layer.layer_img:
+                url = layer.layer_img.url.replace('\\', '/')
+                if request:
+                    url = request.build_absolute_uri(url)
+                urls.append(url)
+
+        # 2. Добавляем картинку схемы (Scheme) в КОНЕЦ этого же списка
+        scheme = obj.schemes.first()
+        if scheme and scheme.scheme_img:
+            url_scheme = scheme.scheme_img.url.replace('\\', '/')
+            if request:
+                url_scheme = request.build_absolute_uri(url_scheme)
+            urls.append(url_scheme)
+
+        return urls
+
+    def get_imgSchema(self, obj):
+        # Здесь возвращаем картинку ОПИСАНИЯ схемы (scheme_description_img)
+        request = self.context.get('request')
+        scheme = obj.schemes.first()
+
+        if scheme and scheme.scheme_description_img:
+            url = scheme.scheme_description_img.url.replace('\\', '/')
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return ""
+
+    def get_descriptionContainer(self, obj):
+        # Текстовые описания слоев
+        layers = obj.layers.all().order_by('number')
+        descriptions = []
+        for layer in layers:
+            # Добавляем описание, даже если оно пустое, чтобы индексы совпадали с картинками (если нужно)
+            # Или добавляем только если есть текст:
+            if layer.layer_description:
+                descriptions.append(layer.layer_description)
+        return descriptions

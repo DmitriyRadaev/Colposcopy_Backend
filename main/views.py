@@ -17,7 +17,7 @@ from .serializers import (
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
-    PathologyDetailInfoSerializer
+    PathologyDetailInfoSerializer, CaseDetailInfoSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -301,5 +301,13 @@ class ClinicalCaseListView(generics.ListAPIView):
 class PathologyDetailView(generics.RetrieveAPIView):
     queryset = Pathology.objects.prefetch_related("images").all()
     serializer_class = PathologyDetailInfoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+
+class CaseDetailInfoView(generics.RetrieveAPIView):
+    # Подгружаем layers и schemes сразу
+    queryset = Case.objects.prefetch_related('layers', 'schemes').all()
+    serializer_class = CaseDetailInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
