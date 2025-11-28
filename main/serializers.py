@@ -273,10 +273,25 @@ class CaseIdSerializer(serializers.ModelSerializer):
 
 # Основной сериализатор для этого эндпоинта
 class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
-    # Используем вложенный сериализатор для поля cases
-    # read_only=True — так как мы только отдаем данные
     cases = CaseIdSerializer(many=True, read_only=True)
 
     class Meta:
         model = Pathology
         fields = ("id", "name", "cases")
+
+class PathologyDetailInfoSerializer(serializers.ModelSerializer):
+    imgContainer = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Pathology
+        fields = ("id", "imgContainer", "description")
+
+    def get_imgContainer(self, obj):
+        request = self.context.get('request')
+        images = obj.images.all()
+        urls = []
+        for img in images:
+            if img.image:
+                url = request.build_absolute_uri(img.image.url) if request else img.image.url
+                urls.append(url)
+        return urls

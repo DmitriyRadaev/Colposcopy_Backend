@@ -12,7 +12,7 @@ from main.views import (
     SchemeViewSet,
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
-    ClinicalCaseListView  # Новый view для тестирования
+    ClinicalCaseListView, PathologyDetailView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -53,5 +53,6 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
+    path('atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
 
 ]

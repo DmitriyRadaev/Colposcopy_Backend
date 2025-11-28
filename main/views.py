@@ -16,7 +16,8 @@ from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
-    TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer
+    TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
+    PathologyDetailInfoSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -296,3 +297,9 @@ class ClinicalCaseListView(generics.ListAPIView):
         return response.Response({
             "items": serializer.data
         })
+
+class PathologyDetailView(generics.RetrieveAPIView):
+    queryset = Pathology.objects.prefetch_related("images").all()
+    serializer_class = PathologyDetailInfoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
