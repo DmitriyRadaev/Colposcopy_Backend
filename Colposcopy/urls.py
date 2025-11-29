@@ -16,7 +16,7 @@ from main.views import (
     SchemeViewSet,
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
-    ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView  # Новый view для тестирования
+    ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -58,7 +58,8 @@ urlpatterns = [
     path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
     path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
-    path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
+    path('api/test/test-tasks/<str:pathology_ids>/', GetTestTasksView.as_view(), name='get-test-tasks'),
+    # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
 

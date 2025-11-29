@@ -1,5 +1,5 @@
 # views.py
-from rest_framework import viewsets, generics, permissions, response, decorators, status
+from rest_framework import viewsets, generics, permissions, response, decorators, status, views
 from rest_framework.views import APIView
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
     exceptions as jwt_exceptions
@@ -17,7 +17,7 @@ from .serializers import (
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
-    PathologyDetailInfoSerializer, CaseDetailInfoSerializer
+    PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -311,3 +311,43 @@ class CaseDetailInfoView(generics.RetrieveAPIView):
     serializer_class = CaseDetailInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
+
+
+class GetTestTasksView(generics.ListAPIView):
+    serializer_class = TestTaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 1. Получаем строку из URL
+        ids_string = self.kwargs.get('pathology_ids', '')
+
+        # 2. Безопасный парсинг
+        # split('-') разобьет строку.
+        # x.isdigit() проверит, является ли часть числом.
+        # Если придет слово "multiple", оно просто проигнорируется, и ошибки не будет.
+        pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
+
+        # Если список пуст (например, пришла ерунда в URL), возвращаем пустой результат
+        if not pathology_ids:
+            return Case.objects.none()
+
+        # 3. Фильтруем
+        queryset = Case.objects.filter(pathology__id__in=pathology_ids).prefetch_related(
+            'layers',
+            'schemes',
+            'questions',
+            'questions__answers'
+        ).distinct()
+
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+
+        # 4. Оборачиваем в объект { items: [...] } согласно интерфейсу GetTestTasksDataDto
+        return response.Response({
+            "items": serializer.data
+
+
+        })

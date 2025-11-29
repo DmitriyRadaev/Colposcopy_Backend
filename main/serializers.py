@@ -351,3 +351,53 @@ class CaseDetailInfoSerializer(serializers.ModelSerializer):
             if layer.layer_description:
                 descriptions.append(layer.layer_description)
         return descriptions
+
+
+class TestAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Answer
+        fields = ('id', 'text')
+
+class TestQuestionSerializer(serializers.ModelSerializer):
+    question = serializers.CharField(source='name')
+    # Меняем IntegerField на SerializerMethodField, чтобы обработать вручную
+    typeQuestion = serializers.SerializerMethodField()
+    instructions = serializers.CharField(source='instruction')
+    answers = TestAnswerSerializer(many=True)
+
+    class Meta:
+        model = Question
+        fields = ('id', 'question', 'typeQuestion', 'instructions', 'answers')
+
+    def get_typeQuestion(self, obj):
+        # Логика превращения текста в цифру для фронта
+        # Если в базе "multiple" -> отправляем 1
+        # Если "single" или что-то другое -> отправляем 0
+        if str(obj.qtype).lower() == "multiple":
+            return 1
+        return 0
+
+class TestTaskSerializer(serializers.ModelSerializer):
+    imageSrcs = serializers.SerializerMethodField()
+    testsQuestions = TestQuestionSerializer(source='questions', many=True)
+
+    class Meta:
+        model = Case
+        fields = ('id', 'imageSrcs', 'testsQuestions')
+
+    def get_imageSrcs(self, obj):
+        request = self.context.get('request')
+        urls = []
+        # Слои
+        for layer in obj.layers.all().order_by('number'):
+            if layer.layer_img:
+                url = layer.layer_img.url.replace('\\', '/')
+                if request: url = request.build_absolute_uri(url)
+                urls.append(url)
+        # Схема (если надо)
+        scheme = obj.schemes.first()
+        if scheme and scheme.scheme_img:
+            s_url = scheme.scheme_img.url.replace('\\', '/')
+            if request: s_url = request.build_absolute_uri(s_url)
+            urls.append(s_url)
+        return urls
