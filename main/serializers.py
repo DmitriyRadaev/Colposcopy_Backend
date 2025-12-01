@@ -1,5 +1,5 @@
 # serializers.py
-from rest_framework import serializers
+from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
     WorkerProfile, Case, Layer, Question, Pathology, Scheme, Answer, PathologyImage, TestResult
@@ -249,13 +249,14 @@ class TestSubmissionSerializer(serializers.Serializer):
     )
 
 
+# Сериализатор для ОТВЕТА сервера (результат теста)
 class TestResultSerializer(serializers.ModelSerializer):
     pathology_name = serializers.CharField(source='pathology.name', read_only=True)
+    user_name = serializers.CharField(source='user.name', read_only=True)
 
     class Meta:
         model = TestResult
-        fields = ['id', 'user', 'pathology', 'pathology_name', 'score', 'max_score', 'percentage', 'grade',
-                  'created_at']
+        fields = ['id', 'user_name', 'pathology_name', 'score', 'max_score', 'percentage', 'grade', 'created_at']
 
 
 
@@ -401,3 +402,29 @@ class TestTaskSerializer(serializers.ModelSerializer):
             if request: s_url = request.build_absolute_uri(s_url)
             urls.append(s_url)
         return urls
+
+
+
+class QuestionSubmissionSerializer(serializers.Serializer):
+    questionId = serializers.IntegerField()
+    selectedAnswers = serializers.ListField(
+        child=serializers.IntegerField(),
+        allow_empty=True
+    )
+
+class CaseSubmissionSerializer(serializers.Serializer):
+    caseId = serializers.IntegerField()
+    answers = QuestionSubmissionSerializer(many=True)
+
+class TestSubmissionWrapperSerializer(serializers.Serializer):
+    items = CaseSubmissionSerializer(many=True)
+
+class QuestionBulkCreateView(generics.CreateAPIView):
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+
+    def get_serializer(self, *args, **kwargs):
+        # Если входящие данные ('data') — это список, ставим many=True
+        if isinstance(kwargs.get('data', {}), list):
+            kwargs['many'] = True
+        return super().get_serializer(*args, **kwargs)

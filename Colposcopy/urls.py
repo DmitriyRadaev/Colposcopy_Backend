@@ -8,6 +8,7 @@ from rest_framework.routers import DefaultRouter
 
 from django.conf import settings
 from main import views
+from main.serializers import QuestionBulkCreateView
 from main.views import (
     PathologyViewSet,
     CaseViewSet,
@@ -24,8 +25,8 @@ from main.views import (
 # ----------------------------
 router = DefaultRouter()
 router.register(r'pathologies', PathologyViewSet, basename='pathology')
-# router.register(r'cases', CaseViewSet, basename='case')
-router.register(r'questions', QuestionViewSet, basename='question')
+router.register(r'cases', CaseViewSet, basename='case')
+#router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
@@ -59,7 +60,12 @@ urlpatterns = [
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
     path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
     path('api/test/test-tasks/<str:pathology_ids>/', GetTestTasksView.as_view(), name='get-test-tasks'),
-    # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
+    path('api/test/submit-answers/', SubmitTestView.as_view(), name='test-submit'),
+   # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
+    path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'),
+
+
+
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
 

@@ -1,4 +1,5 @@
 # views.py
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
 from rest_framework.views import APIView
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
@@ -17,7 +18,8 @@ from .serializers import (
     WorkerProfileSerializer, CaseSerializer, LayerSerializer, QuestionSerializer,
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
-    PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer
+    PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
+    TestSubmissionWrapperSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -194,79 +196,93 @@ class SchemeViewSet(viewsets.ModelViewSet):
 # ЛОГИКА ТЕСТИРОВАНИЯ
 # -------------------------------------------------------------------------
 
-class SubmitTestView(APIView):
+class SubmitTestView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # 1. Валидация входных данных (ids патологии, кейсов и ответов)
-        serializer = TestSubmissionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # 1. Используем новый сериализатор-обертку
+        # many=True здесь НЕ НУЖЕН, так как корневой элемент - это объект {}, а не список
+        serializer = TestSubmissionWrapperSerializer(data=request.data)
 
-        pathology_id = serializer.validated_data['pathology_id']
-        case_ids = serializer.validated_data['case_ids']
-        user_answer_ids = serializer.validated_data['answer_ids']  # Список ID ответов пользователя
+        if not serializer.is_valid():
+            return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # 2. Получаем выбранные кейсы, чтобы убедиться, что они существуют
-        selected_cases = Case.objects.filter(id__in=case_ids, pathology_id=pathology_id)
-        if not selected_cases.exists():
-            return response.Response(
-                {"detail": "Не найдены кейсы для указанной патологии."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Достаем список кейсов из ключа "items"
+        # Структура: [{'caseId': 1, 'answers': [...]}, ...]
+        submission_items = serializer.validated_data['items']
 
-        # 3. Считаем MAX балл (Знаменатель)
-        # Находим ВСЕ правильные ответы (is_correct=True), которые существуют
-        # внутри вопросов, привязанных к выбранным кейсам.
-        correct_answers_db = Answer.objects.filter(
-            question__case__in=selected_cases,
+        if not submission_items:
+            return response.Response({"detail": "Список items пуст"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ---------------------------------------------------
+        # 2. Обработка данных (Flattening)
+        # ---------------------------------------------------
+
+        case_ids = [item['caseId'] for item in submission_items]
+
+        user_selected_ids = []
+        for case_item in submission_items:
+            for question_item in case_item['answers']:
+                # Обращаемся по ключу 'selectedAnswers', так как переименовали поле в сериализаторе
+                ids = question_item['selectedAnswers']
+                user_selected_ids.extend(ids)
+
+        # ---------------------------------------------------
+        # 3. Определение Патологии (по первому кейсу)
+        # ---------------------------------------------------
+        first_case_id = case_ids[0]
+        # Используем filter().first(), чтобы не вылететь с 404, если ID кривой,
+        # хотя get_object_or_404 тоже ок.
+        first_case = get_object_or_404(Case, pk=first_case_id)
+        pathology = first_case.pathology
+
+        # ---------------------------------------------------
+        # 4. Подсчет баллов
+        # ---------------------------------------------------
+
+        # А. Максимальный балл (сколько всего правильных ответов в этих кейсах)
+        max_score = Answer.objects.filter(
+            question__case__id__in=case_ids,
             is_correct=True
-        )
-        max_score = correct_answers_db.count()
+        ).count()
 
-        # 4. Считаем балл пользователя (Числитель)
-        # Пользователь получает балл, если ID его ответа совпадает с правильным ответом из БД.
-        # Используем set для уникальности ID, чтобы исключить дубли.
-        user_answer_ids_set = set(user_answer_ids)
+        if max_score == 0:
+            max_score = 1
 
-        # Фильтруем список правильных ответов базы данных: оставляем только те,
-        # ID которых есть в ответах пользователя.
-        user_score = correct_answers_db.filter(id__in=user_answer_ids_set).count()
+            # Б. Балл пользователя
+        user_score = Answer.objects.filter(
+            id__in=user_selected_ids,
+            is_correct=True,
+            question__case__id__in=case_ids
+        ).count()
 
-        # 5. Вычисляем процент
-        if max_score > 0:
-            percentage = (user_score / max_score) * 100
-        else:
-            percentage = 0  # Если вопросов/правильных ответов в кейсах не было вообще
+        # В. Процент и оценка
+        percentage = (user_score / max_score) * 100
+        percentage = round(percentage, 2)
 
-        # Округляем до 1 знака (можно до целого, как удобнее)
-        percentage = round(percentage, 1)
-
-        # 6. Определяем оценку согласно ТЗ
-        # 0-64% Неудовлетворительно
-        # 65-74% Удовлетворительно
-        # 75-84% Хорошо
-        # 85-100% Отлично
-        if percentage >= 85:
+        if percentage >= 90:
             grade = "Отлично"
         elif percentage >= 75:
             grade = "Хорошо"
-        elif percentage >= 65:
+        elif percentage >= 50:
             grade = "Удовлетворительно"
         else:
             grade = "Неудовлетворительно"
 
-        # 7. Сохраняем результат в историю
-        result = TestResult.objects.create(
+        # ---------------------------------------------------
+        # 5. Сохранение и ответ
+        # ---------------------------------------------------
+        test_result = TestResult.objects.create(
             user=request.user,
-            pathology_id=pathology_id,
+            pathology=pathology,
             score=user_score,
             max_score=max_score,
             percentage=percentage,
             grade=grade
         )
 
-        # 8. Возвращаем результат клиенту
-        return response.Response(TestResultSerializer(result).data, status=status.HTTP_201_CREATED)
+        return_serializer = TestResultSerializer(test_result)
+        return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class PathologyListInfoView(generics.ListAPIView):
@@ -351,3 +367,5 @@ class GetTestTasksView(generics.ListAPIView):
 
 
         })
+
+
