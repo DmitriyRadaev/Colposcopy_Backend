@@ -17,7 +17,8 @@ from main.views import (
     SchemeViewSet,
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
-    ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView  # Новый view для тестирования
+    ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
+    UserProfileView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -41,7 +42,6 @@ urlpatterns = [
     path("api/auth/login/", views.loginView, name="login"),
     path("api/auth/logout/", views.logoutView, name="logout"),
     path("api/auth/refresh_token/", views.CookieTokenRefreshView.as_view(), name="token_refresh"),
-    path("api/auth/user/", views.current_user_view, name="account"), # Поправил имя view на current_user_view
 
     # --- REGISTRATION ---
     path("api/auth/register/worker/", views.WorkerRegisterView.as_view(), name="worker_register"),
@@ -63,6 +63,7 @@ urlpatterns = [
     path('api/test/submit-answers/', SubmitTestView.as_view(), name='test-submit'),
    # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
     path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'),
+    path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'),
 
 
 

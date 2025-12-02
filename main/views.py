@@ -19,7 +19,7 @@ from .serializers import (
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
-    TestSubmissionWrapperSerializer
+    TestSubmissionWrapperSerializer, UserProfileSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -369,3 +369,10 @@ class GetTestTasksView(generics.ListAPIView):
         })
 
 
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        # Возвращаем текущего юзера, который делает запрос
+        return self.request.user

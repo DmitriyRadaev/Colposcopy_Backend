@@ -428,3 +428,66 @@ class QuestionBulkCreateView(generics.CreateAPIView):
         if isinstance(kwargs.get('data', {}), list):
             kwargs['many'] = True
         return super().get_serializer(*args, **kwargs)
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    # Явно объявляем поля профиля, так как их нет в модели Account
+    work = serializers.CharField(required=False, allow_blank=True)
+    position = serializers.CharField(required=False, allow_blank=True)
+
+    # Пароль делаем необязательным, чтобы можно было обновить профиль без смены пароля
+    password = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Account
+        fields = ("name", "surname", "patronymic", "email", "work", "position", "password")
+
+    def to_representation(self, instance):
+        """
+        Этот метод формирует JSON, который улетит на фронтенд (GET запрос).
+        """
+        data = super().to_representation(instance)
+
+        # 1. Достаем данные из профиля (WorkerProfile)
+        # Используем getattr, чтобы не упасть с ошибкой, если профиля нет
+        profile = getattr(instance, 'worker_profile', None)
+
+        data['work'] = profile.work if profile else ""
+        data['position'] = profile.position if profile else ""
+
+        # 2. Пароль всегда возвращаем пустой (заглушка)
+        data['password'] = ""
+
+        return data
+
+    def update(self, instance, validated_data):
+        """
+        Этот метод срабатывает при сохранении (PUT/PATCH запрос).
+        """
+        # 1. Извлекаем данные, которые не относятся напрямую к модели Account
+        work = validated_data.pop('work', None)
+        position = validated_data.pop('position', None)
+        password = validated_data.pop('password', None)
+
+        # 2. Обновляем основные поля Account (email, name, surname...)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        # 3. Если пришел пароль и он не пустой — обновляем его
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+
+        # 4. Обновляем или создаем профиль работника
+        # Если work или position пришли в запросе (даже если пустые строки)
+        if work is not None or position is not None:
+            WorkerProfile.objects.update_or_create(
+                user=instance,
+                defaults={
+                    'work': work if work is not None else "",
+                    'position': position if position is not None else ""
+                }
+            )
+
+        return instance
