@@ -18,7 +18,7 @@ from main.views import (
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
-    UserProfileView, UserTestHistoryView  # Новый view для тестирования
+    UserProfileView, UserTestHistoryView, TestResultHistoryView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -26,7 +26,7 @@ from main.views import (
 # ----------------------------
 router = DefaultRouter()
 router.register(r'pathologies', PathologyViewSet, basename='pathology')
-router.register(r'cases', CaseViewSet, basename='case')
+#router.register(r'cases', CaseViewSet, basename='case')
 #router.register(r'questions', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
@@ -61,11 +61,11 @@ urlpatterns = [
     path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
     path('api/test/test-tasks/<str:pathology_ids>/', GetTestTasksView.as_view(), name='get-test-tasks'),
     path('api/test/submit-answers/', SubmitTestView.as_view(), name='test-submit'),
-   # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
+    path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
     path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'),
     path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'),
     path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'),
-
+    path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),
 
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),

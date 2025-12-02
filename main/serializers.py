@@ -517,3 +517,98 @@ class UserTryInfoSerializer(serializers.ModelSerializer):
             # Вернет строку вида "05:03"
             return f"{minutes:02}:{seconds:02}"
         return "00:00"
+
+
+# --- Level 1: IAnswers ---
+class HistoryAnswerSerializer(serializers.ModelSerializer):
+    # Исправлено: isSelecterd -> isSelected
+    isSelected = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Answer
+        fields = ('id', 'text', 'isSelected')
+
+    def get_isSelected(self, obj):
+        # Получаем множество ID выбранных пользователем ответов из контекста
+        selected_ids = self.context.get('selected_answer_ids', set())
+        return obj.id in selected_ids
+
+
+# --- Level 2: ITestQuestion ---
+class HistoryQuestionSerializer(serializers.ModelSerializer):
+    question = serializers.CharField(source='name')
+    # 0 или 1
+    typeQuestion = serializers.SerializerMethodField()
+    instructions = serializers.CharField(source='instruction')
+    # Правильно ли отвечен весь вопрос
+    isCorrect = serializers.SerializerMethodField()
+    answers = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Question
+        fields = ('id', 'question', 'isCorrect', 'typeQuestion', 'instructions', 'answers')
+
+    def get_typeQuestion(self, obj):
+        # Превращаем "multiple" -> 1, "single" -> 0
+        if str(obj.qtype).lower() == "multiple":
+            return 1
+        return 0
+
+    def get_isCorrect(self, obj):
+        """
+        Проверка правильности ответа на вопрос.
+        Сравниваем множество правильных ответов с множеством выбранных пользователем.
+        """
+        selected_ids = self.context.get('selected_answer_ids', set())
+
+        # 1. ID всех правильных вариантов для этого вопроса
+        correct_answer_ids = set(a.id for a in obj.answers.all() if a.is_correct)
+
+        # 2. ID вариантов этого вопроса, которые выбрал юзер
+        # (пересечение всех выборов юзера и вариантов этого вопроса)
+        all_options_ids = set(a.id for a in obj.answers.all())
+        user_picked_in_this_question = selected_ids.intersection(all_options_ids)
+
+        # 3. Если множества равны — вопрос отвечен верно
+        return correct_answer_ids == user_picked_in_this_question
+
+    def get_answers(self, obj):
+        return HistoryAnswerSerializer(
+            obj.answers.all(),
+            many=True,
+            context=self.context
+        ).data
+
+
+# --- Level 3: ITestTask ---
+class HistoryTaskSerializer(serializers.ModelSerializer):
+    imageSrcs = serializers.SerializerMethodField()
+    testsQuestions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Case
+        fields = ('id', 'imageSrcs', 'testsQuestions')
+
+    def get_imageSrcs(self, obj):
+        request = self.context.get('request')
+        urls = []
+        # Слои
+        for layer in obj.layers.all().order_by('number'):
+            if layer.layer_img:
+                url = layer.layer_img.url.replace('\\', '/')
+                if request: url = request.build_absolute_uri(url)
+                urls.append(url)
+        # Схема (если есть)
+        scheme = obj.schemes.first()
+        if scheme and scheme.scheme_img:
+            s_url = scheme.scheme_img.url.replace('\\', '/')
+            if request: s_url = request.build_absolute_uri(s_url)
+            urls.append(s_url)
+        return urls
+
+    def get_testsQuestions(self, obj):
+        return HistoryQuestionSerializer(
+            obj.questions.all(),
+            many=True,
+            context=self.context
+        ).data

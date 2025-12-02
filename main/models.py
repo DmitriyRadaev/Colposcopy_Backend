@@ -241,3 +241,12 @@ class TestResult(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.percentage}% ({self.grade})"
+
+
+class UserTestAnswer(models.Model):
+    test_result = models.ForeignKey(TestResult, on_delete=models.CASCADE, related_name='user_answers')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    answer = models.ForeignKey(Answer, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"Result {self.test_result.id} - Ans {self.answer.id}"
