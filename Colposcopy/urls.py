@@ -18,7 +18,7 @@ from main.views import (
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
-    UserProfileView  # Новый view для тестирования
+    UserProfileView, UserTestHistoryView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -64,6 +64,7 @@ urlpatterns = [
    # path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
     path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'),
     path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'),
+    path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'),
 
 
 

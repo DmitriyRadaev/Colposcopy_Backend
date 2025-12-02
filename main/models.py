@@ -236,7 +236,7 @@ class TestResult(models.Model):
 
     # Текстовая оценка (Отлично, Хорошо, Удовлетворительно, Неудовлетворительно)
     grade = models.CharField(max_length=30, blank=True)
-
+    time_spent = models.DurationField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

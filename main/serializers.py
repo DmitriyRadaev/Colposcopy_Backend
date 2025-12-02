@@ -416,8 +416,10 @@ class CaseSubmissionSerializer(serializers.Serializer):
     caseId = serializers.IntegerField()
     answers = QuestionSubmissionSerializer(many=True)
 
+
 class TestSubmissionWrapperSerializer(serializers.Serializer):
     items = CaseSubmissionSerializer(many=True)
+    duration = serializers.IntegerField(min_value=0, required=False, default=0)
 
 class QuestionBulkCreateView(generics.CreateAPIView):
     queryset = Question.objects.all()
@@ -491,3 +493,27 @@ class UserProfileSerializer(serializers.ModelSerializer):
             )
 
         return instance
+
+
+class UserTryInfoSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField()
+    date = serializers.SerializerMethodField()
+    mark = serializers.CharField(source='grade')
+    time = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TestResult
+        fields = ('id', 'date', 'mark', 'time')
+
+    def get_date(self, obj):
+        return obj.created_at.strftime("%d.%m.%Y")
+
+    def get_time(self, obj):
+        # obj.time_spent — это объект timedelta (или None)
+        if obj.time_spent:
+            total_seconds = int(obj.time_spent.total_seconds())
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            # Вернет строку вида "05:03"
+            return f"{minutes:02}:{seconds:02}"
+        return "00:00"

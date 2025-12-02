@@ -1,4 +1,6 @@
 # views.py
+from datetime import timedelta
+
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
 from rest_framework.views import APIView
@@ -19,7 +21,7 @@ from .serializers import (
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
-    TestSubmissionWrapperSerializer, UserProfileSerializer
+    TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -200,39 +202,42 @@ class SubmitTestView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # 1. Используем новый сериализатор-обертку
-        # many=True здесь НЕ НУЖЕН, так как корневой элемент - это объект {}, а не список
+        # 1. Валидация входных данных через WrapperSerializer
+        # Ожидаем структуру: { "duration": 120, "items": [ ... ] }
         serializer = TestSubmissionWrapperSerializer(data=request.data)
 
         if not serializer.is_valid():
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Достаем список кейсов из ключа "items"
-        # Структура: [{'caseId': 1, 'answers': [...]}, ...]
-        submission_items = serializer.validated_data['items']
+        # Достаем валидированные данные
+        validated_data = serializer.validated_data
+        submission_items = validated_data.get('items', [])
+        duration_seconds = validated_data.get('duration', 0)  # Получаем секунды (int)
 
         if not submission_items:
-            return response.Response({"detail": "Список items пуст"}, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response({"detail": "Список ответов пуст"}, status=status.HTTP_400_BAD_REQUEST)
 
         # ---------------------------------------------------
-        # 2. Обработка данных (Flattening)
+        # 2. Подготовка данных (Flattening)
         # ---------------------------------------------------
 
+        # Собираем ID всех кейсов, участвовавших в тесте
         case_ids = [item['caseId'] for item in submission_items]
 
+        # Собираем ID всех ответов пользователя в один плоский список
         user_selected_ids = []
         for case_item in submission_items:
+            # case_item['answers'] - это список объектов QuestionSubmission
             for question_item in case_item['answers']:
-                # Обращаемся по ключу 'selectedAnswers', так как переименовали поле в сериализаторе
+                # Берем 'selectedAnswers', так как мы так назвали поле в сериализаторе
                 ids = question_item['selectedAnswers']
                 user_selected_ids.extend(ids)
 
         # ---------------------------------------------------
-        # 3. Определение Патологии (по первому кейсу)
+        # 3. Определение Патологии
         # ---------------------------------------------------
+        # Берем первый кейс, чтобы узнать, к какой патологии относился тест
         first_case_id = case_ids[0]
-        # Используем filter().first(), чтобы не вылететь с 404, если ID кривой,
-        # хотя get_object_or_404 тоже ок.
         first_case = get_object_or_404(Case, pk=first_case_id)
         pathology = first_case.pathology
 
@@ -240,23 +245,27 @@ class SubmitTestView(views.APIView):
         # 4. Подсчет баллов
         # ---------------------------------------------------
 
-        # А. Максимальный балл (сколько всего правильных ответов в этих кейсах)
+        # А. MAX SCORE (Максимально возможный балл)
+        # Считаем количество ВСЕХ правильных ответов, которые существуют в вопросах этих кейсов
         max_score = Answer.objects.filter(
             question__case__id__in=case_ids,
             is_correct=True
         ).count()
 
+        # Защита от деления на ноль
         if max_score == 0:
             max_score = 1
 
-            # Б. Балл пользователя
+            # Б. USER SCORE (Балл пользователя)
+        # Считаем количество ответов пользователя, которые являются правильными
+        # И обязательно проверяем, что они относятся к текущим кейсам (защита от подмены)
         user_score = Answer.objects.filter(
             id__in=user_selected_ids,
             is_correct=True,
             question__case__id__in=case_ids
         ).count()
 
-        # В. Процент и оценка
+        # В. Процент и Оценка
         percentage = (user_score / max_score) * 100
         percentage = round(percentage, 2)
 
@@ -270,7 +279,7 @@ class SubmitTestView(views.APIView):
             grade = "Неудовлетворительно"
 
         # ---------------------------------------------------
-        # 5. Сохранение и ответ
+        # 5. Сохранение результата
         # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
@@ -278,9 +287,12 @@ class SubmitTestView(views.APIView):
             score=user_score,
             max_score=max_score,
             percentage=percentage,
-            grade=grade
+            grade=grade,
+            # Конвертируем секунды (int) в timedelta для поля DurationField
+            time_spent=timedelta(seconds=duration_seconds)
         )
 
+        # 6. Возврат ответа фронтенду
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -376,3 +388,22 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         # Возвращаем текущего юзера, который делает запрос
         return self.request.user
+
+
+class UserTestHistoryView(generics.ListAPIView):
+    serializer_class = UserTryInfoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 1. Фильтруем по текущему пользователю
+        # 2. Сортируем по дате создания (сначала новые) - order_by('-created_at')
+        return TestResult.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+
+        # Если фронту нужна обертка { "items": [...] }, как в прошлых задачах:
+        return response.Response({
+            "items": serializer.data
+        })
