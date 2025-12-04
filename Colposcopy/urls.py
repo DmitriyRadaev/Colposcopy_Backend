@@ -26,13 +26,11 @@ from main.views import (
 # ----------------------------
 router = DefaultRouter()
 router.register(r'pathologies', PathologyViewSet, basename='pathology')
-#router.register(r'cases', CaseViewSet, basename='case')
-#router.register(r'questions', QuestionViewSet, basename='question')
+router.register(r'case_submit', CaseViewSet, basename='case')
+router.register(r'questions_submit', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
-
-
 
 # ----------------------------
 # URL patterns
