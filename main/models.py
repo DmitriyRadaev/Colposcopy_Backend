@@ -158,7 +158,10 @@ class Pathology(models.Model):
     def __str__(self):
         return self.name
 
-
+class VideoTutorial(models.Model):
+    video = models.FileField(upload_to='videos/', null=False, blank=False)
+    video_instruction = models.TextField(null=False, blank=False)
+    fields = ['id', 'video', 'video_instruction']
 class PathologyImage(models.Model):
     pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="images")
     image = models.ImageField(upload_to="pathology_img/", null=False, blank=False)
@@ -250,3 +253,9 @@ class UserTestAnswer(models.Model):
 
     def __str__(self):
         return f"Result {self.test_result.id} - Ans {self.answer.id}"
+
+
+class VideoTutorial(models.Model):
+    video = models.FileField(upload_to='videos/', null=False, blank=False)
+    video_instruction = models.TextField(null=False, blank=False)
+    fields = ['id', 'video', 'video_instruction']

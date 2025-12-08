@@ -2,7 +2,7 @@
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Case, Layer, Question, Pathology, Scheme, Answer, PathologyImage, TestResult
+    WorkerProfile, Case, Layer, Question, Pathology, Scheme, Answer, PathologyImage, TestResult, VideoTutorial
 )
 
 # -------------------------------------------------------------------------
@@ -229,7 +229,10 @@ class PathologySerializer(serializers.ModelSerializer):
         model = Pathology
         fields = ['id', 'name', 'description', 'images', 'cases']
 
-
+class VideoTutorialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ['video', 'video_instruction']
 # -------------------------------------------------------------------------
 # ЛОГИКА ТЕСТИРОВАНИЯ
 # -------------------------------------------------------------------------

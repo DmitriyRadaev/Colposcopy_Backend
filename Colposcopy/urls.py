@@ -2,6 +2,7 @@
 from os.path import basename
 
 from django.conf.urls.static import static
+from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.static import serve
 from rest_framework.routers import DefaultRouter
@@ -18,7 +19,7 @@ from main.views import (
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
-    UserProfileView, UserTestHistoryView, TestResultHistoryView  # Новый view для тестирования
+    UserProfileView, UserTestHistoryView, TestResultHistoryView, VideoTutorialViewSet  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -31,7 +32,7 @@ router.register(r'questions_submit', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
-
+router.register(r'video-tutorial', VideoTutorialViewSet)
 # ----------------------------
 # URL patterns
 # ----------------------------
@@ -64,6 +65,8 @@ urlpatterns = [
     path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'),
     path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'),
     path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),
+    path('api/admin-zone/', admin.site.urls),
+
 
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),

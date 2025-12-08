@@ -13,7 +13,8 @@ from rest_framework import exceptions as rest_exceptions
 from django.contrib.auth import get_user_model
 
 from .models import (
-    WorkerProfile, Case, Layer, Question, Pathology, Scheme, PathologyImage, Answer, TestResult, UserTestAnswer
+    WorkerProfile, Case, Layer, Question, Pathology, Scheme, PathologyImage, Answer, TestResult, UserTestAnswer,
+    VideoTutorial
 )
 from .serializers import (
     AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, SuperAdminRegistrationSerializer,
@@ -21,7 +22,8 @@ from .serializers import (
     PathologySerializer, SchemeSerializer, PathologyImageSerializer,
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
-    TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer
+    TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
+    VideoTutorialSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -454,3 +456,7 @@ class TestResultHistoryView(generics.RetrieveAPIView):
             "items": serializer.data
         })
 
+class VideoTutorialViewSet(viewsets.ModelViewSet):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = VideoTutorialSerializer
+    permission_classes = [permissions.IsAuthenticated]
