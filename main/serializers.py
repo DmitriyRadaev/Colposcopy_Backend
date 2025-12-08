@@ -398,12 +398,6 @@ class TestTaskSerializer(serializers.ModelSerializer):
                 url = layer.layer_img.url.replace('\\', '/')
                 if request: url = request.build_absolute_uri(url)
                 urls.append(url)
-        # Схема (если надо)
-        scheme = obj.schemes.first()
-        if scheme and scheme.scheme_img:
-            s_url = scheme.scheme_img.url.replace('\\', '/')
-            if request: s_url = request.build_absolute_uri(s_url)
-            urls.append(s_url)
         return urls
 
 
@@ -429,18 +423,14 @@ class QuestionBulkCreateView(generics.CreateAPIView):
     serializer_class = QuestionSerializer
 
     def get_serializer(self, *args, **kwargs):
-        # Если входящие данные ('data') — это список, ставим many=True
         if isinstance(kwargs.get('data', {}), list):
             kwargs['many'] = True
         return super().get_serializer(*args, **kwargs)
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    # Явно объявляем поля профиля, так как их нет в модели Account
     work = serializers.CharField(required=False, allow_blank=True)
     position = serializers.CharField(required=False, allow_blank=True)
-
-    # Пароль делаем необязательным, чтобы можно было обновить профиль без смены пароля
     password = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
@@ -448,9 +438,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ("name", "surname", "patronymic", "email", "work", "position", "password")
 
     def to_representation(self, instance):
-        """
-        Этот метод формирует JSON, который улетит на фронтенд (GET запрос).
-        """
         data = super().to_representation(instance)
 
         # 1. Достаем данные из профиля (WorkerProfile)
@@ -522,9 +509,7 @@ class UserTryInfoSerializer(serializers.ModelSerializer):
         return "00:00"
 
 
-# --- Level 1: IAnswers ---
 class HistoryAnswerSerializer(serializers.ModelSerializer):
-    # Исправлено: isSelecterd -> isSelected
     isSelected = serializers.SerializerMethodField()
 
     class Meta:
@@ -537,7 +522,6 @@ class HistoryAnswerSerializer(serializers.ModelSerializer):
         return obj.id in selected_ids
 
 
-# --- Level 2: ITestQuestion ---
 class HistoryQuestionSerializer(serializers.ModelSerializer):
     question = serializers.CharField(source='name')
     # 0 или 1
@@ -583,7 +567,6 @@ class HistoryQuestionSerializer(serializers.ModelSerializer):
         ).data
 
 
-# --- Level 3: ITestTask ---
 class HistoryTaskSerializer(serializers.ModelSerializer):
     imageSrcs = serializers.SerializerMethodField()
     testsQuestions = serializers.SerializerMethodField()

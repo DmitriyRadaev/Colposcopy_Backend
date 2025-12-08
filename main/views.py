@@ -27,9 +27,7 @@ from .serializers import (
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
-# -------------------------------------------------------------------------
-# АУТЕНТИФИКАЦИЯ (JWT в Cookies)
-# -------------------------------------------------------------------------
+
 
 Account = get_user_model()
 
@@ -178,9 +176,6 @@ class CaseViewSet(viewsets.ModelViewSet):
     serializer_class = CaseSerializer
 
 
-# TaskViewSet удален, так как модель Task удалена.
-# Вопросы теперь привязаны напрямую к Case.
-
 class QuestionViewSet(viewsets.ModelViewSet):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
@@ -209,7 +204,6 @@ class SubmitTestView(views.APIView):
         if not serializer.is_valid():
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Достаем данные
         validated_data = serializer.validated_data
         submission_items = validated_data.get('items', [])
         duration_seconds = validated_data.get('duration', 0)
@@ -221,12 +215,9 @@ class SubmitTestView(views.APIView):
         # 2. Сбор данных (Flattening)
         # ---------------------------------------------------
         case_ids = [item['caseId'] for item in submission_items]
-
-        # Собираем все ID ответов пользователя в один список
         user_selected_ids = []
         for case_item in submission_items:
             for question_item in case_item['answers']:
-                # selectedAnswers - массив ID [1, 5, ...]
                 ids = question_item['selectedAnswers']
                 user_selected_ids.extend(ids)
 
@@ -275,9 +266,8 @@ class SubmitTestView(views.APIView):
         )
 
         # ---------------------------------------------------
-        # 5. ВАЖНО: СОХРАНЕНИЕ ДЕТАЛЬНЫХ ОТВЕТОВ (UserTestAnswer)
+        # СОХРАНЕНИЕ ДЕТАЛЬНЫХ ОТВЕТОВ (UserTestAnswer)
         # ---------------------------------------------------
-        # Без этого блока история будет пустой!
         if user_selected_ids:
             # Получаем объекты всех выбранных ответов
             selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids)
@@ -287,7 +277,7 @@ class SubmitTestView(views.APIView):
                 user_test_answers.append(
                     UserTestAnswer(
                         test_result=test_result,
-                        question=ans_obj.question,  # Django сам подтянет связь
+                        question=ans_obj.question,
                         answer=ans_obj
                     )
                 )
@@ -315,7 +305,6 @@ class PathologyListInfoView(generics.ListAPIView):
 
 
 class ClinicalCaseListView(generics.ListAPIView):
-    # Оптимизация запроса к БД
     queryset = Pathology.objects.prefetch_related("cases").all()
     serializer_class = ClinicalCaseInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -323,8 +312,6 @@ class ClinicalCaseListView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         serializer = self.get_serializer(queryset, many=True)
-
-        # Оборачиваем в items согласно GetClinicalCasesInfoDto
         return response.Response({
             "items": serializer.data
         })
@@ -349,20 +336,11 @@ class GetTestTasksView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # 1. Получаем строку из URL
         ids_string = self.kwargs.get('pathology_ids', '')
-
-        # 2. Безопасный парсинг
-        # split('-') разобьет строку.
-        # x.isdigit() проверит, является ли часть числом.
-        # Если придет слово "multiple", оно просто проигнорируется, и ошибки не будет.
         pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
 
-        # Если список пуст (например, пришла ерунда в URL), возвращаем пустой результат
         if not pathology_ids:
             return Case.objects.none()
-
-        # 3. Фильтруем
         queryset = Case.objects.filter(pathology__id__in=pathology_ids).prefetch_related(
             'layers',
             'schemes',
@@ -375,8 +353,6 @@ class GetTestTasksView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-
-        # 4. Оборачиваем в объект { items: [...] } согласно интерфейсу GetTestTasksDataDto
         return response.Response({
             "items": serializer.data
 
@@ -405,8 +381,6 @@ class UserTestHistoryView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         serializer = self.get_serializer(queryset, many=True)
-
-        # Если фронту нужна обертка { "items": [...] }, как в прошлых задачах:
         return response.Response({
             "items": serializer.data
         })
@@ -414,22 +388,12 @@ class UserTestHistoryView(generics.ListAPIView):
 
 class TestResultHistoryView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
-
-    # ИСПРАВЛЕНИЕ: Используем стандартную сигнатуру (*args, **kwargs)
     def get(self, request, *args, **kwargs):
-        # 1. Достаем ID из параметров URL
-        # В urls.py у вас указано <int:id>, значит ключ будет 'id'
         id = kwargs.get('id')
-
-        # 2. Находим попытку и проверяем права
         test_result = get_object_or_404(TestResult, id=id, user=request.user)
-
-        # 3. Собираем список ID ответов, которые выбрал юзер
         selected_answer_ids = set(
             test_result.user_answers.values_list('answer_id', flat=True)
         )
-
-        # 4. Находим связанные кейсы
         pathology = test_result.pathology
         if not pathology:
             return response.Response({"items": []})
@@ -441,7 +405,6 @@ class TestResultHistoryView(generics.RetrieveAPIView):
             'questions__answers'
         ).distinct()
 
-        # 5. Сериализуем
         serializer = HistoryTaskSerializer(
             cases,
             many=True,
@@ -451,7 +414,6 @@ class TestResultHistoryView(generics.RetrieveAPIView):
             }
         )
 
-        # 6. Возвращаем items
         return response.Response({
             "items": serializer.data
         })

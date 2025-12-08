@@ -34,38 +34,35 @@ router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
 router.register(r'video-tutorial', VideoTutorialViewSet)
 # ----------------------------
-# URL patterns
+# URL
 # ----------------------------
 urlpatterns = [
-    # --- AUTH ---
+    # Авторизация
     path("api/auth/login/", views.loginView, name="login"),
     path("api/auth/logout/", views.logoutView, name="logout"),
     path("api/auth/refresh_token/", views.CookieTokenRefreshView.as_view(), name="token_refresh"),
 
-    # --- REGISTRATION ---
+    # Регистрация
     path("api/auth/register/worker/", views.WorkerRegisterView.as_view(), name="worker_register"),
     path("api/auth/register/admin/", views.AdminRegisterView.as_view(), name="admin_register"),
-    # path("api/auth/register/superadmin/", views.SuperAdminRegisterView.as_view()), # Если нужно
-
-    # --- TEST LOGIC ---
-    # Эндпоинт для отправки результатов теста (POST запрос)
-    path("api/test/submit/", SubmitTestView.as_view(), name="submit_test"),
+    # path("api/auth/register/superadmin/", views.SuperAdminRegisterView.as_view()),
 
 
+    path("api/test/submit/", SubmitTestView.as_view(), name="submit_test"),  # Отправка теста
 
-    # --- MAIN API (CRUD) ---
+    # Главные API
     path("api/", include(router.urls)),
-    path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'),
-    path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'),
-    path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),
-    path('api/test/test-tasks/<str:pathology_ids>/', GetTestTasksView.as_view(), name='get-test-tasks'),
-    path('api/test/submit-answers/', SubmitTestView.as_view(), name='test-submit'),
-    path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'),
-    path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'),
-    path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'),
-    path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'),
-    path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),
-    path('api/admin-zone/', admin.site.urls),
+    path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'), # GET: Получить список всех патологий (только ID и Название) для меню атласа.
+    path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'), # GET: Получить список патологий, внутри которых лежат списки ID их клинических случаев.
+    path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),  # GET: Получить полную информацию о конкретной патологии (описание, фотографии) по её ID.
+    path('api/cases/case/<int:id>/', CaseDetailInfoView.as_view(), name='case-detail-info'), # GET: Получить данные конкретного клинического случая по ID (слои изображений, схемы, описания слоев).
+    path('api/test/test-tasks/<str:pathology_ids>/', GetTestTasksView.as_view(), name='get-test-tasks'),    # GET: Сгенерировать тест. Принимает строку ID патологий через дефис (например, "1-3-5").
+    path('api/test/submit-answers/', SubmitTestView.as_view(), name='test-submit'),       # POST: Отправить ответы пользователя на проверку.
+    path('api/questions/bulk-create/', QuestionBulkCreateView.as_view(), name='questions-bulk-create'), # Убрать?
+    path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'), # GET: Получить данные текущего пользователя (ФИО, работа, email). # PATCH: Изменить данные профиля или сменить пароль.
+    path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'), # GET: Получить список всех попыток прохождения тестов текущего пользователя (Дата, Оценка, Время).
+    path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),  # GET: Получить детальный разбор конкретной попытки по её ID.
+    path('api/admin-zone/', admin.site.urls),    # Админ-панель Django.
 
 
 

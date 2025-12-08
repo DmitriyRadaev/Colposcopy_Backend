@@ -72,9 +72,6 @@ class AccountManager(BaseUserManager):
         )
 
         if work is not None or position is not None:
-            # Получаем модель WorkerProfile динамически, чтобы избежать циклического импорта, если они в одном файле
-            # или просто импортируем, если структура позволяет.
-            # Здесь предполагаем, что они в одном файле models.py
             WorkerProfile.objects.update_or_create(user=user, defaults={
                 "work": work or "",
                 "position": position or ""
@@ -89,12 +86,9 @@ class Account(AbstractBaseUser, PermissionsMixin):
         WORKER = "WORKER", "Работник"
 
     email = models.EmailField(null=False, blank=False, unique=True)
-
-    # --- Новые поля вместо username ---
     name = models.CharField(max_length=50, blank=False, null=False, verbose_name="Имя")
     surname = models.CharField(max_length=50, blank=False, null=False, verbose_name="Фамилия")
     patronymic = models.CharField(max_length=50, blank=True, default="", verbose_name="Отчество")
-    # ----------------------------------
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.WORKER)
 
@@ -162,6 +156,7 @@ class VideoTutorial(models.Model):
     video = models.FileField(upload_to='videos/', null=False, blank=False)
     video_instruction = models.TextField(null=False, blank=False)
     fields = ['id', 'video', 'video_instruction']
+
 class PathologyImage(models.Model):
     pathology = models.ForeignKey(Pathology, on_delete=models.CASCADE, related_name="images")
     image = models.ImageField(upload_to="pathology_img/", null=False, blank=False)
@@ -253,9 +248,3 @@ class UserTestAnswer(models.Model):
 
     def __str__(self):
         return f"Result {self.test_result.id} - Ans {self.answer.id}"
-
-
-class VideoTutorial(models.Model):
-    video = models.FileField(upload_to='videos/', null=False, blank=False)
-    video_instruction = models.TextField(null=False, blank=False)
-    fields = ['id', 'video', 'video_instruction']

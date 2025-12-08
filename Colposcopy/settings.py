@@ -189,17 +189,11 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 
-    # custom
     'AUTH_COOKIE': 'access',
-    # Cookie name. Enables cookies if value is set.
     'AUTH_COOKIE_REFRESH': 'refresh',
-    # A string like "example.com", or None for standard domain cookie.
     'AUTH_COOKIE_DOMAIN': None,
-    # Whether the auth cookies should be secure (https:// only).
     'AUTH_COOKIE_SECURE': False,
-    # Http only cookie flag.It's not fetch by javascript.
     'AUTH_COOKIE_HTTP_ONLY': False,
-    'AUTH_COOKIE_PATH': '/',        # The path of the auth cookie.
-    # Whether to set the flag restricting cookie leaks on cross-site requests. This can be 'Lax', 'Strict', or None to disable the flag.
-    'AUTH_COOKIE_SAMESITE': "Lax", # TODO: Modify to Lax
+    'AUTH_COOKIE_PATH': '/',
+    'AUTH_COOKIE_SAMESITE': "Lax",
 }
