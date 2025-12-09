@@ -19,7 +19,8 @@ from main.views import (
     PathologyImageViewSet,
     SubmitTestView, PathologyListInfoView,
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
-    UserProfileView, UserTestHistoryView, TestResultHistoryView, VideoTutorialViewSet  # Новый view для тестирования
+    UserProfileView, UserTestHistoryView, TestResultHistoryView,
+    TutorialListView, TutorialDetailView, TutorialCreateView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -32,7 +33,6 @@ router.register(r'questions_submit', QuestionViewSet, basename='question')
 router.register(r'layers', LayerViewSet, basename='layer')
 router.register(r'schemes', SchemeViewSet, basename='scheme')
 router.register(r'pathology-images', PathologyImageViewSet, basename='pathology-images')
-router.register(r'video-tutorial', VideoTutorialViewSet)
 # ----------------------------
 # URL
 # ----------------------------
@@ -63,7 +63,9 @@ urlpatterns = [
     path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'), # GET: Получить список всех попыток прохождения тестов текущего пользователя (Дата, Оценка, Время).
     path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),  # GET: Получить детальный разбор конкретной попытки по её ID.
     path('api/admin-zone/', admin.site.urls),    # Админ-панель Django.
-
+    path('api/tutorial/tutorials-list/', TutorialListView.as_view(), name='tutorials-list'), # GET: Получить список туториалов
+    path('api/tutorial/<int:id>/', TutorialDetailView.as_view(), name='tutorial-detail'), # GET: Получить детальную информацию о туториале по ID
+    path('api/tutorial/create/', TutorialCreateView.as_view(), name='tutorial-create'), # POST: Создать туториал
 
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),

@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
     exceptions as jwt_exceptions
@@ -23,7 +24,7 @@ from .serializers import (
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
-    VideoTutorialSerializer
+    VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 
@@ -418,7 +419,33 @@ class TestResultHistoryView(generics.RetrieveAPIView):
             "items": serializer.data
         })
 
-class VideoTutorialViewSet(viewsets.ModelViewSet):
+
+# 1. Список туториалов
+class TutorialListView(generics.ListAPIView):
     queryset = VideoTutorial.objects.all()
-    serializer_class = VideoTutorialSerializer
+    serializer_class = TutorialListSerializer
+    permission_classes = [permissions.IsAuthenticated]  # Или AllowAny, как вам нужно
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+
+        # Оборачиваем список в ключ "items"
+        return response.Response({
+            "items": serializer.data
+        })
+
+
+# 2. Детальная информация о туториале
+class TutorialDetailView(generics.RetrieveAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+
+class TutorialCreateView(generics.CreateAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialCreateSerializer
+    parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [permissions.IsAuthenticated] # поменять на проде

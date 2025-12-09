@@ -598,3 +598,19 @@ class HistoryTaskSerializer(serializers.ModelSerializer):
             many=True,
             context=self.context
         ).data
+
+class TutorialListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id', 'name')
+
+
+class TutorialDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id', 'name', 'video', 'poster', 'description')
+
+class TutorialCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id', 'name', 'video', 'poster', 'description')
