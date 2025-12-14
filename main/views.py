@@ -325,7 +325,6 @@ class PathologyDetailView(generics.RetrieveAPIView):
 
 
 class CaseDetailInfoView(generics.RetrieveAPIView):
-    # Подгружаем layers и schemes сразу
     queryset = Case.objects.prefetch_related('layers', 'schemes').all()
     serializer_class = CaseDetailInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -424,7 +423,7 @@ class TestResultHistoryView(generics.RetrieveAPIView):
 class TutorialListView(generics.ListAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialListSerializer
-    permission_classes = [permissions.IsAuthenticated]  # Или AllowAny, как вам нужно
+    permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
