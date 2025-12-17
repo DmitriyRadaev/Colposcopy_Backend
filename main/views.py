@@ -106,16 +106,28 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
     serializer_class = CookieTokenRefreshSerializer
 
     def finalize_response(self, request, response_obj, *args, **kwargs):
+        if response_obj.data.get("access"):
+            response_obj.set_cookie(
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+                value=response_obj.data['access'],
+                expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+                secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
+                httponly=True, # Жестко True
+                samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+            )
+            del response_obj.data["access"]
+
         if response_obj.data.get("refresh"):
             response_obj.set_cookie(
                 key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
                 value=response_obj.data['refresh'],
                 expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
                 secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-                httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
+                httponly=True, # Жестко True
                 samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
             )
             del response_obj.data["refresh"]
+
         response_obj["X-CSRFToken"] = request.COOKIES.get("csrftoken")
         return super().finalize_response(request, response_obj, *args, **kwargs)
 
