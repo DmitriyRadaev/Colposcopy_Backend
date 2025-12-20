@@ -2,6 +2,7 @@
 from datetime import timedelta
 
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
@@ -73,7 +74,7 @@ def loginView(request):
     res["X-CSRFToken"] = csrf.get_token(request)
     return res
 
-
+@csrf_exempt
 @decorators.api_view(["POST"])
 @decorators.permission_classes([permissions.IsAuthenticated])
 def logoutView(request):
