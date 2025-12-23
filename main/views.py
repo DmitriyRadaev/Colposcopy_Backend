@@ -27,9 +27,7 @@ from .serializers import (
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
 )
-from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
-
-
+from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin, IsAdminOrAuthenticatedReadOnly
 
 Account = get_user_model()
 
@@ -76,7 +74,7 @@ def loginView(request):
 
 @csrf_exempt
 @decorators.api_view(["POST"])
-@decorators.permission_classes([permissions.IsAuthenticated])
+@decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
@@ -178,31 +176,36 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
 class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
     serializer_class = PathologySerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class PathologyImageViewSet(viewsets.ModelViewSet):
     queryset = PathologyImage.objects.all()
     serializer_class = PathologyImageSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class CaseViewSet(viewsets.ModelViewSet):
     queryset = Case.objects.all()
     serializer_class = CaseSerializer
-
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 class QuestionViewSet(viewsets.ModelViewSet):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class LayerViewSet(viewsets.ModelViewSet):
     queryset = Layer.objects.all()
     serializer_class = LayerSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class SchemeViewSet(viewsets.ModelViewSet):
     queryset = Scheme.objects.all()
     serializer_class = SchemeSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 # -------------------------------------------------------------------------
@@ -460,4 +463,4 @@ class TutorialCreateView(generics.CreateAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialCreateSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [permissions.IsAuthenticated] # поменять на проде
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
