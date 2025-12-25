@@ -27,7 +27,9 @@ from .serializers import (
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
 )
-from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin, IsAdminOrAuthenticatedReadOnly
+from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
+
+
 
 Account = get_user_model()
 
@@ -68,6 +70,14 @@ def loginView(request):
         httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
+    res.set_cookie(
+        key="user_role",
+        value="admin" if user.is_staff else "worker",
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
+        httponly=True,
+        samesite='Lax'
+    )
 
     res["X-CSRFToken"] = csrf.get_token(request)
     return res
@@ -84,10 +94,45 @@ def logoutView(request):
     except Exception:
         pass
 
-    res = response.Response({"detail": "Logged out"})
-    res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
-    res.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-    res.delete_cookie("X-CSRFToken")
+    res = response.Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
+
+    res.delete_cookie(
+        key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+        path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
+
+    res.delete_cookie(
+        key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
+        path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
+
+
+    res.delete_cookie(
+        key="user_role",
+        path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
+
+    res.delete_cookie(
+        key="is_staff",
+        path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
+        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    )
+
+    res.delete_cookie(
+        key=settings.CSRF_COOKIE_NAME,
+        path='/',
+        samesite=settings.CSRF_COOKIE_SAMESITE
+    )
+
+    res.delete_cookie(
+        key="X-CSRFToken",
+        path='/',
+        samesite=settings.CSRF_COOKIE_SAMESITE
+    )
+
     return res
 
 
@@ -229,33 +274,60 @@ class SubmitTestView(views.APIView):
             return response.Response({"detail": "Список ответов пуст"}, status=status.HTTP_400_BAD_REQUEST)
 
         # ---------------------------------------------------
-        # 2. Сбор данных (Flattening)
+        # 2. Сбор данных
         # ---------------------------------------------------
         case_ids = [item['caseId'] for item in submission_items]
-        user_selected_ids = []
+
+        # Карта: { ID_вопроса: {ID_ответа_1, ID_ответа_2} }
+        user_answers_map = {}
+        # Плоский список для сохранения истории
+        user_selected_ids_flat = []
+
         for case_item in submission_items:
             for question_item in case_item['answers']:
-                ids = question_item['selectedAnswers']
-                user_selected_ids.extend(ids)
+                q_id = question_item['questionId']
+                selected_ids = set(question_item['selectedAnswers'])
+
+                user_answers_map[q_id] = selected_ids
+                user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
         # ---------------------------------------------------
-        # 3. Определение Патологии и Подсчет
+        # 3. Определение Патологии
         # ---------------------------------------------------
         first_case = get_object_or_404(Case, pk=case_ids[0])
         pathology = first_case.pathology
 
-        # Максимальный балл
-        max_score = Answer.objects.filter(
-            question__case__id__in=case_ids,
-            is_correct=True
-        ).count() or 1
+        # ---------------------------------------------------
+        # 4. ПОДСЧЕТ БАЛЛОВ (1 вопрос = 1 балл)
+        # ---------------------------------------------------
 
-        # Балл пользователя
-        user_score = Answer.objects.filter(
-            id__in=user_selected_ids,
-            is_correct=True,
-            question__case__id__in=case_ids
-        ).count()
+        # Получаем список вопросов для этих кейсов
+        questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
+
+        user_score = 0
+        max_score = 0
+
+        for question in questions_qs:
+            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
+            # Мы увеличиваем макс. балл на 1 за каждый ВОПРОС, а не за каждый правильный ответ.
+            max_score += 1
+
+            # 1. Какие ответы правильные (множество ID)
+            correct_answer_ids = set(
+                ans.id for ans in question.answers.all() if ans.is_correct
+            )
+
+            # 2. Какие ответы выбрал юзер (множество ID)
+            user_selected_set = user_answers_map.get(question.id, set())
+
+            # 3. Сравниваем множества целиком
+            # Если множества полностью совпадают -> +1 балл
+            # Если есть лишняя галочка или не хватает нужной -> 0 баллов
+            if user_selected_set == correct_answer_ids:
+                user_score += 1
+
+        if max_score == 0:
+            max_score = 1
 
         # Процент и Оценка
         percentage = round((user_score / max_score) * 100, 2)
@@ -270,7 +342,7 @@ class SubmitTestView(views.APIView):
             grade = "Неудовлетворительно"
 
         # ---------------------------------------------------
-        # 4. Сохранение Результата (TestResult)
+        # 5. Сохранение результата
         # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
@@ -283,12 +355,10 @@ class SubmitTestView(views.APIView):
         )
 
         # ---------------------------------------------------
-        # СОХРАНЕНИЕ ДЕТАЛЬНЫХ ОТВЕТОВ (UserTestAnswer)
+        # 6. Сохранение истории ответов
         # ---------------------------------------------------
-        if user_selected_ids:
-            # Получаем объекты всех выбранных ответов
-            selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids)
-
+        if user_selected_ids_flat:
+            selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids_flat)
             user_test_answers = []
             for ans_obj in selected_answers_objs:
                 user_test_answers.append(
@@ -298,12 +368,8 @@ class SubmitTestView(views.APIView):
                         answer=ans_obj
                     )
                 )
-            # Сохраняем пачкой (одним запросом)
             UserTestAnswer.objects.bulk_create(user_test_answers)
 
-        # ---------------------------------------------------
-        # 6. Ответ
-        # ---------------------------------------------------
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
