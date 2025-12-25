@@ -27,17 +27,31 @@ services:
     env_file:
       - .env
 
+  # Сервис PgAdmin
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_container
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@mail.ru"
+      PGADMIN_DEFAULT_PASSWORD: "admin123"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+
   nginx:
     image: nginx:latest
     container_name: nginx_server
     ports:
       - "80:80"
     volumes:
-      - ./_docker/nginx/conf.d/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - static_volume:/app/static:ro
-      - media_volume:/app/media:ro
+      - ./_docker/nginx/conf.d/nginx.conf:/etc/nginx/conf.d/default.conf
+      - static_volume:/app/static
+      - media_volume:/app/media
     depends_on:
       - web
+      - pgadmin
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -45,3 +59,4 @@ volumes:
   postgres_data:
   static_volume:
   media_volume:
+  pgadmin_data:
