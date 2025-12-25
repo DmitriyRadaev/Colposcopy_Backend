@@ -1,6 +1,7 @@
 # views.py
 from datetime import timedelta
 
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
@@ -398,12 +399,18 @@ class PathologyListInfoView(generics.ListAPIView):
 
 
 class ClinicalCaseListView(generics.ListAPIView):
-    queryset = Pathology.objects.prefetch_related("cases").all()
     serializer_class = ClinicalCaseInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        return Pathology.objects.annotate(
+            c_count=Count('cases')
+        ).filter(
+            c_count__gt=0
+        ).prefetch_related("cases")
+
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
@@ -429,26 +436,37 @@ class GetTestTasksView(generics.ListAPIView):
 
     def get_queryset(self):
         ids_string = self.kwargs.get('pathology_ids', '')
-        pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
+
+        try:
+            pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
+        except ValueError:
+            pathology_ids = []
 
         if not pathology_ids:
             return Case.objects.none()
-        queryset = Case.objects.filter(pathology__id__in=pathology_ids).prefetch_related(
+
+
+        final_case_ids = []
+
+        for p_id in pathology_ids:
+
+            random_cases = Case.objects.filter(pathology_id=p_id).values_list('id', flat=True).order_by('?')[:4]
+            final_case_ids.extend(list(random_cases))
+
+        queryset = Case.objects.filter(id__in=final_case_ids).prefetch_related(
             'layers',
             'schemes',
             'questions',
             'questions__answers'
         ).distinct()
 
-        return queryset
+        return queryset.order_by('?')
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
-
-
         })
 
 
