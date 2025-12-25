@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   web:
     build:
@@ -27,6 +29,21 @@ services:
     env_file:
       - .env
 
+  # --- НОВЫЙ СЕРВИС ---
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_container
+    restart: always
+    environment:
+      # Логин и пароль для входа в веб-интерфейс pgAdmin
+      PGADMIN_DEFAULT_EMAIL: "admin@atlascolposcopy.ru"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+  # --------------------
+
   nginx:
     image: nginx:latest
     container_name: nginx_server
@@ -40,6 +57,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - web
+      - pgadmin # Добавили зависимость
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -47,4 +65,4 @@ volumes:
   postgres_data:
   static_volume:
   media_volume:
-
+  pgadmin_data: # Добавили том для сохранения настроек pgAdmin
