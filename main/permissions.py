@@ -25,17 +25,13 @@ class IsAdminOrSuperAdmin(permissions.BasePermission):
         )
 
 
-class IsWorker(permissions.BasePermission):
-    """Доступ только пользователям с ролью WORKER."""
-    def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, "role", None) == Account.Role.WORKER
-        )
+from rest_framework import permissions
 
-
-class ReadOnly(permissions.BasePermission):
-    """Разрешает только безопасные (GET/HEAD/OPTIONS) запросы."""
+class IsAdminOrAuthenticatedReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.method in permissions.SAFE_METHODS
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user.is_staff

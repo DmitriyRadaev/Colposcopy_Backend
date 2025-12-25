@@ -27,7 +27,7 @@ from .serializers import (
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
 )
-from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
+from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
 
 
@@ -76,7 +76,7 @@ def loginView(request):
 
 @csrf_exempt
 @decorators.api_view(["POST"])
-@decorators.permission_classes([permissions.IsAuthenticated])
+@decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
@@ -178,31 +178,36 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
 class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
     serializer_class = PathologySerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class PathologyImageViewSet(viewsets.ModelViewSet):
     queryset = PathologyImage.objects.all()
     serializer_class = PathologyImageSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class CaseViewSet(viewsets.ModelViewSet):
     queryset = Case.objects.all()
     serializer_class = CaseSerializer
-
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 class QuestionViewSet(viewsets.ModelViewSet):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class LayerViewSet(viewsets.ModelViewSet):
     queryset = Layer.objects.all()
     serializer_class = LayerSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 class SchemeViewSet(viewsets.ModelViewSet):
     queryset = Scheme.objects.all()
     serializer_class = SchemeSerializer
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
 # -------------------------------------------------------------------------
@@ -226,33 +231,60 @@ class SubmitTestView(views.APIView):
             return response.Response({"detail": "Список ответов пуст"}, status=status.HTTP_400_BAD_REQUEST)
 
         # ---------------------------------------------------
-        # 2. Сбор данных (Flattening)
+        # 2. Сбор данных
         # ---------------------------------------------------
         case_ids = [item['caseId'] for item in submission_items]
-        user_selected_ids = []
+
+        # Карта: { ID_вопроса: {ID_ответа_1, ID_ответа_2} }
+        user_answers_map = {}
+        # Плоский список для сохранения истории
+        user_selected_ids_flat = []
+
         for case_item in submission_items:
             for question_item in case_item['answers']:
-                ids = question_item['selectedAnswers']
-                user_selected_ids.extend(ids)
+                q_id = question_item['questionId']
+                selected_ids = set(question_item['selectedAnswers'])
+
+                user_answers_map[q_id] = selected_ids
+                user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
         # ---------------------------------------------------
-        # 3. Определение Патологии и Подсчет
+        # 3. Определение Патологии
         # ---------------------------------------------------
         first_case = get_object_or_404(Case, pk=case_ids[0])
         pathology = first_case.pathology
 
-        # Максимальный балл
-        max_score = Answer.objects.filter(
-            question__case__id__in=case_ids,
-            is_correct=True
-        ).count() or 1
+        # ---------------------------------------------------
+        # 4. ПОДСЧЕТ БАЛЛОВ (1 вопрос = 1 балл)
+        # ---------------------------------------------------
 
-        # Балл пользователя
-        user_score = Answer.objects.filter(
-            id__in=user_selected_ids,
-            is_correct=True,
-            question__case__id__in=case_ids
-        ).count()
+        # Получаем список вопросов для этих кейсов
+        questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
+
+        user_score = 0
+        max_score = 0
+
+        for question in questions_qs:
+            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
+            # Мы увеличиваем макс. балл на 1 за каждый ВОПРОС, а не за каждый правильный ответ.
+            max_score += 1
+
+            # 1. Какие ответы правильные (множество ID)
+            correct_answer_ids = set(
+                ans.id for ans in question.answers.all() if ans.is_correct
+            )
+
+            # 2. Какие ответы выбрал юзер (множество ID)
+            user_selected_set = user_answers_map.get(question.id, set())
+
+            # 3. Сравниваем множества целиком
+            # Если множества полностью совпадают -> +1 балл
+            # Если есть лишняя галочка или не хватает нужной -> 0 баллов
+            if user_selected_set == correct_answer_ids:
+                user_score += 1
+
+        if max_score == 0:
+            max_score = 1
 
         # Процент и Оценка
         percentage = round((user_score / max_score) * 100, 2)
@@ -267,7 +299,7 @@ class SubmitTestView(views.APIView):
             grade = "Неудовлетворительно"
 
         # ---------------------------------------------------
-        # 4. Сохранение Результата (TestResult)
+        # 5. Сохранение результата
         # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
@@ -280,12 +312,10 @@ class SubmitTestView(views.APIView):
         )
 
         # ---------------------------------------------------
-        # СОХРАНЕНИЕ ДЕТАЛЬНЫХ ОТВЕТОВ (UserTestAnswer)
+        # 6. Сохранение истории ответов
         # ---------------------------------------------------
-        if user_selected_ids:
-            # Получаем объекты всех выбранных ответов
-            selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids)
-
+        if user_selected_ids_flat:
+            selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids_flat)
             user_test_answers = []
             for ans_obj in selected_answers_objs:
                 user_test_answers.append(
@@ -295,12 +325,8 @@ class SubmitTestView(views.APIView):
                         answer=ans_obj
                     )
                 )
-            # Сохраняем пачкой (одним запросом)
             UserTestAnswer.objects.bulk_create(user_test_answers)
 
-        # ---------------------------------------------------
-        # 6. Ответ
-        # ---------------------------------------------------
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -460,4 +486,4 @@ class TutorialCreateView(generics.CreateAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialCreateSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [permissions.IsAuthenticated] # поменять на проде
+    permission_classes = [IsAdminOrAuthenticatedReadOnly]
