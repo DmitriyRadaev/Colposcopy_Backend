@@ -1,6 +1,6 @@
 # views.py
 from datetime import timedelta
-
+from django.core.cache import cache
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -381,6 +381,15 @@ class SubmitTestView(views.APIView):
                 )
             UserTestAnswer.objects.bulk_create(user_test_answers)
 
+        user_id = request.user.id
+
+        active_key_pointer = f"user_{user_id}_current_test_key"
+        actual_cache_key = cache.get(active_key_pointer)
+
+        if actual_cache_key:
+            cache.delete(actual_cache_key)
+            cache.delete(active_key_pointer)
+
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -429,38 +438,48 @@ class CaseDetailInfoView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
-
+TEST_CACHE_TIMEOUT = 60 * 10
 class GetTestTasksView(generics.ListAPIView):
     serializer_class = TestTaskSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        ids_string = self.kwargs.get('pathology_ids', '')
+        pathology_ids_str = self.kwargs.get('pathology_ids', '')
+        user_id = self.request.user.id
+
+        cache_key = f"user_{user_id}_test_tasks_{pathology_ids_str}"
+
+
+        saved_case_ids = cache.get(cache_key)
+
+        if saved_case_ids:
+
+            return Case.objects.filter(id__in=saved_case_ids).prefetch_related(
+                'layers', 'schemes', 'questions', 'questions__answers'
+            )
 
         try:
-            pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
+            pathology_ids = [int(x) for x in pathology_ids_str.split('-') if x.isdigit()]
         except ValueError:
             pathology_ids = []
 
         if not pathology_ids:
             return Case.objects.none()
 
-
         final_case_ids = []
-
         for p_id in pathology_ids:
-
+            # 4 случайных кейса
             random_cases = Case.objects.filter(pathology_id=p_id).values_list('id', flat=True).order_by('?')[:4]
-            final_case_ids.extend(list(random_cases))
+            final_case_ids.extend([int(c_id) for c_id in random_cases])
 
-        queryset = Case.objects.filter(id__in=final_case_ids).prefetch_related(
-            'layers',
-            'schemes',
-            'questions',
-            'questions__answers'
-        ).distinct()
 
-        return queryset.order_by('?')
+        cache.set(cache_key, final_case_ids, timeout=TEST_CACHE_TIMEOUT)
+        active_key_pointer = f"user_{user_id}_current_test_key"
+        cache.set(active_key_pointer, cache_key, timeout=TEST_CACHE_TIMEOUT)
+
+        return Case.objects.filter(id__in=final_case_ids).prefetch_related(
+            'layers', 'schemes', 'questions', 'questions__answers'
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -484,8 +503,6 @@ class UserTestHistoryView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # 1. Фильтруем по текущему пользователю
-        # 2. Сортируем по дате создания (сначала новые) - order_by('-created_at')
         return TestResult.objects.filter(user=self.request.user).order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
