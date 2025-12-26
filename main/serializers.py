@@ -608,9 +608,14 @@ class TutorialListSerializer(serializers.ModelSerializer):
 class TutorialDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
-        fields = ('id', 'name', 'video', 'poster', 'description')
+        fields = ('id', 'name', 'video', 'poster', 'description','tutorial_file')
 
 class TutorialCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
-        fields = ('id', 'name', 'video', 'poster', 'description')
+        fields = ('id', 'name', 'video', 'poster', 'description','tutorial_file')
+
+class TutorialDeleteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id',)

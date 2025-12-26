@@ -20,7 +20,7 @@ from main.views import (
     SubmitTestView, PathologyListInfoView,
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
     UserProfileView, UserTestHistoryView, TestResultHistoryView,
-    TutorialListView, TutorialDetailView, TutorialCreateView  # Новый view для тестирования
+    TutorialListView, TutorialDetailView, TutorialCreateView, TutorialDeleteView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -66,6 +66,7 @@ urlpatterns = [
     path('api/tutorial/tutorials-list/', TutorialListView.as_view(), name='tutorials-list'), # GET: Получить список туториалов
     path('api/tutorial/<int:id>/', TutorialDetailView.as_view(), name='tutorial-detail'), # GET: Получить детальную информацию о туториале по ID
     path('api/tutorial/create/', TutorialCreateView.as_view(), name='tutorial-create'), # POST: Создать туториал
+    path('api/tutorial/delete/<int:id>/', TutorialDeleteView.as_view(), name='tutorial-delete'),  #DELETE: Удалить туториал
 
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),

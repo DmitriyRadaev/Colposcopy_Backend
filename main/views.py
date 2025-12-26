@@ -1,6 +1,7 @@
 # views.py
 from datetime import timedelta
-
+from django.core.cache import cache
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, generics, permissions, response, decorators, status, views
@@ -25,7 +26,8 @@ from .serializers import (
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
-    VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
+    VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
+    TutorialDeleteSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -86,47 +88,57 @@ def loginView(request):
 @decorators.api_view(["POST"])
 @decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
+    # 1. Блэклист refresh токена
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if refresh_token:
             token = tokens.RefreshToken(refresh_token)
             token.blacklist()
     except Exception:
+        # Если токен уже невалиден или его нет, игнорируем
         pass
 
+    # 2. Формируем ответ
     res = response.Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
+    # 3. Удаляем Access Token
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
+    # 4. Удаляем Refresh Token
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-
+    # 5. Удаляем куку роли (если вы ее ставили при логине)
+    # Мы используем строковое имя "user_role", так как в settings.SIMPLE_JWT его обычно нет по умолчанию.
+    # Но используем те же path и samesite, чтобы удаление точно сработало.
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
+    # Если использовали is_staff
     res.delete_cookie(
         key="is_staff",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
+    # 6. Удаляем CSRF куки (стандартные Django настройки)
     res.delete_cookie(
         key=settings.CSRF_COOKIE_NAME,
         path='/',
         samesite=settings.CSRF_COOKIE_SAMESITE
     )
 
+    # Иногда фронтенд или Nginx могут ставить дублирующую куку, лучше почистить и её
     res.delete_cookie(
         key="X-CSRFToken",
         path='/',
@@ -276,60 +288,40 @@ class SubmitTestView(views.APIView):
         # ---------------------------------------------------
         # 2. Сбор данных
         # ---------------------------------------------------
+        # Список ID кейсов, которые реально были в тесте
         case_ids = [item['caseId'] for item in submission_items]
 
-        # Карта: { ID_вопроса: {ID_ответа_1, ID_ответа_2} }
+        # Группировка ответов
         user_answers_map = {}
-        # Плоский список для сохранения истории
         user_selected_ids_flat = []
 
         for case_item in submission_items:
             for question_item in case_item['answers']:
                 q_id = question_item['questionId']
                 selected_ids = set(question_item['selectedAnswers'])
-
                 user_answers_map[q_id] = selected_ids
                 user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
         # ---------------------------------------------------
-        # 3. Определение Патологии
+        # 3. Подсчет баллов (СТРОГО по этим case_ids)
         # ---------------------------------------------------
-        first_case = get_object_or_404(Case, pk=case_ids[0])
-        pathology = first_case.pathology
-
-        # ---------------------------------------------------
-        # 4. ПОДСЧЕТ БАЛЛОВ (1 вопрос = 1 балл)
-        # ---------------------------------------------------
-
-        # Получаем список вопросов для этих кейсов
+        # Важно: фильтруем вопросы ТОЛЬКО по case_ids.
+        # Это гарантирует, что вопросы из других кейсов этой патологии НЕ учитываются.
         questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
 
         user_score = 0
         max_score = 0
 
         for question in questions_qs:
-            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
-            # Мы увеличиваем макс. балл на 1 за каждый ВОПРОС, а не за каждый правильный ответ.
-            max_score += 1
+            max_score += 1  # +1 балл за вопрос
 
-            # 1. Какие ответы правильные (множество ID)
-            correct_answer_ids = set(
-                ans.id for ans in question.answers.all() if ans.is_correct
-            )
-
-            # 2. Какие ответы выбрал юзер (множество ID)
+            correct_answer_ids = set(ans.id for ans in question.answers.all() if ans.is_correct)
             user_selected_set = user_answers_map.get(question.id, set())
 
-            # 3. Сравниваем множества целиком
-            # Если множества полностью совпадают -> +1 балл
-            # Если есть лишняя галочка или не хватает нужной -> 0 баллов
             if user_selected_set == correct_answer_ids:
                 user_score += 1
 
-        if max_score == 0:
-            max_score = 1
-
-        # Процент и Оценка
+        if max_score == 0: max_score = 1
         percentage = round((user_score / max_score) * 100, 2)
 
         if percentage >= 90:
@@ -341,8 +333,12 @@ class SubmitTestView(views.APIView):
         else:
             grade = "Неудовлетворительно"
 
+        # Определение патологии (для статистики)
+        first_case = get_object_or_404(Case, pk=case_ids[0])
+        pathology = first_case.pathology
+
         # ---------------------------------------------------
-        # 5. Сохранение результата
+        # 4. Сохранение
         # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
@@ -354,9 +350,9 @@ class SubmitTestView(views.APIView):
             time_spent=timedelta(seconds=duration_seconds)
         )
 
-        # ---------------------------------------------------
-        # 6. Сохранение истории ответов
-        # ---------------------------------------------------
+
+        test_result.cases.set(case_ids)
+
         if user_selected_ids_flat:
             selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids_flat)
             user_test_answers = []
@@ -369,6 +365,15 @@ class SubmitTestView(views.APIView):
                     )
                 )
             UserTestAnswer.objects.bulk_create(user_test_answers)
+
+        user_id = request.user.id
+
+        active_key_pointer = f"user_{user_id}_current_test_key"
+        actual_cache_key = cache.get(active_key_pointer)
+
+        if actual_cache_key:
+            cache.delete(actual_cache_key)
+            cache.delete(active_key_pointer)
 
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
@@ -388,12 +393,18 @@ class PathologyListInfoView(generics.ListAPIView):
 
 
 class ClinicalCaseListView(generics.ListAPIView):
-    queryset = Pathology.objects.prefetch_related("cases").all()
     serializer_class = ClinicalCaseInfoSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        return Pathology.objects.annotate(
+            c_count=Count('cases')
+        ).filter(
+            c_count__gt=0
+        ).prefetch_related("cases")
+
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
@@ -412,33 +423,54 @@ class CaseDetailInfoView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
-
+TEST_CACHE_TIMEOUT = 60 * 10
 class GetTestTasksView(generics.ListAPIView):
     serializer_class = TestTaskSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        ids_string = self.kwargs.get('pathology_ids', '')
-        pathology_ids = [int(x) for x in ids_string.split('-') if x.isdigit()]
+        pathology_ids_str = self.kwargs.get('pathology_ids', '')
+        user_id = self.request.user.id
+
+        cache_key = f"user_{user_id}_test_tasks_{pathology_ids_str}"
+
+
+        saved_case_ids = cache.get(cache_key)
+
+        if saved_case_ids:
+
+            return Case.objects.filter(id__in=saved_case_ids).prefetch_related(
+                'layers', 'schemes', 'questions', 'questions__answers'
+            )
+
+        try:
+            pathology_ids = [int(x) for x in pathology_ids_str.split('-') if x.isdigit()]
+        except ValueError:
+            pathology_ids = []
 
         if not pathology_ids:
             return Case.objects.none()
-        queryset = Case.objects.filter(pathology__id__in=pathology_ids).prefetch_related(
-            'layers',
-            'schemes',
-            'questions',
-            'questions__answers'
-        ).distinct()
 
-        return queryset
+        final_case_ids = []
+        for p_id in pathology_ids:
+            # 4 случайных кейса
+            random_cases = Case.objects.filter(pathology_id=p_id).values_list('id', flat=True).order_by('?')[:4]
+            final_case_ids.extend([int(c_id) for c_id in random_cases])
+
+
+        cache.set(cache_key, final_case_ids, timeout=TEST_CACHE_TIMEOUT)
+        active_key_pointer = f"user_{user_id}_current_test_key"
+        cache.set(active_key_pointer, cache_key, timeout=TEST_CACHE_TIMEOUT)
+
+        return Case.objects.filter(id__in=final_case_ids).prefetch_related(
+            'layers', 'schemes', 'questions', 'questions__answers'
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
-
-
         })
 
 
@@ -456,8 +488,6 @@ class UserTestHistoryView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # 1. Фильтруем по текущему пользователю
-        # 2. Сортируем по дате создания (сначала новые) - order_by('-created_at')
         return TestResult.objects.filter(user=self.request.user).order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
@@ -470,22 +500,21 @@ class UserTestHistoryView(generics.ListAPIView):
 
 class TestResultHistoryView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         id = kwargs.get('id')
         test_result = get_object_or_404(TestResult, id=id, user=request.user)
+
         selected_answer_ids = set(
             test_result.user_answers.values_list('answer_id', flat=True)
         )
-        pathology = test_result.pathology
-        if not pathology:
-            return response.Response({"items": []})
 
-        cases = Case.objects.filter(pathology=pathology).prefetch_related(
+        cases = test_result.cases.all().prefetch_related(
             'layers',
             'schemes',
             'questions',
             'questions__answers'
-        ).distinct()
+        )
 
         serializer = HistoryTaskSerializer(
             cases,
@@ -529,4 +558,12 @@ class TutorialCreateView(generics.CreateAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialCreateSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [IsAdminOrSuperAdmin]
+
+
+class TutorialDeleteView(generics.DestroyAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialDeleteSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
