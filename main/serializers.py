@@ -273,7 +273,7 @@ class PathologyListSerializer(serializers.ModelSerializer):
 class CaseIdSerializer(serializers.ModelSerializer):
     class Meta:
         model = Case
-        fields = ("id",)
+        fields = ("id",'name')
 
 # Основной сериализатор для этого эндпоинта
 class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
