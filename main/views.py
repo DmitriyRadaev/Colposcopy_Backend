@@ -116,8 +116,6 @@ def logoutView(request):
     )
 
     # 5. Удаляем куку роли (если вы ее ставили при логине)
-    # Мы используем строковое имя "user_role", так как в settings.SIMPLE_JWT его обычно нет по умолчанию.
-    # Но используем те же path и samesite, чтобы удаление точно сработало.
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
