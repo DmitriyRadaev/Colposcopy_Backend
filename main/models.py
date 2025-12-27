@@ -158,6 +158,7 @@ class VideoTutorial(models.Model):
     video = models.FileField(upload_to='videos/', null=True, blank=True, verbose_name="Видео файл")
     description = models.TextField(null=False, blank=False, verbose_name="Описание туториала")
     poster = models.ImageField(upload_to='posters/', null=True, blank=True, verbose_name="Постер")
+    tutorial_file = models.FileField(upload_to="tutorials/", null=True, blank=True)
     class Meta:
         verbose_name = "Видео-туториал"
         verbose_name_plural = "Видео-туториалы"
@@ -242,6 +243,7 @@ class TestResult(models.Model):
     # Текстовая оценка (Отлично, Хорошо, Удовлетворительно, Неудовлетворительно)
     grade = models.CharField(max_length=30, blank=True)
     time_spent = models.DurationField(null=True, blank=True)
+    cases = models.ManyToManyField(Case, related_name='included_in_tests', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

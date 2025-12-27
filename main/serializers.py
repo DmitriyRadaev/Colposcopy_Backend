@@ -273,7 +273,7 @@ class PathologyListSerializer(serializers.ModelSerializer):
 class CaseIdSerializer(serializers.ModelSerializer):
     class Meta:
         model = Case
-        fields = ("id",)
+        fields = ("id",'name')
 
 # Основной сериализатор для этого эндпоинта
 class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
@@ -608,9 +608,14 @@ class TutorialListSerializer(serializers.ModelSerializer):
 class TutorialDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
-        fields = ('id', 'name', 'video', 'poster', 'description')
+        fields = ('id', 'name', 'video', 'poster', 'description','tutorial_file')
 
 class TutorialCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
-        fields = ('id', 'name', 'video', 'poster', 'description')
+        fields = ('id', 'name', 'video', 'poster', 'description','tutorial_file')
+
+class TutorialDeleteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id',)
