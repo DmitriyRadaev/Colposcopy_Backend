@@ -8,6 +8,7 @@ services:
     container_name: django_app
     command: gunicorn Colposcopy.wsgi:application --bind 0.0.0.0:8000
     volumes:
+      - ./:/app
       - static_volume:/app/static
       - media_volume:/app/media
     expose:
@@ -62,6 +63,7 @@ services:
       - "host.docker.internal:host-gateway"
 
 volumes:
+
   postgres_data:
   static_volume:
   media_volume:
