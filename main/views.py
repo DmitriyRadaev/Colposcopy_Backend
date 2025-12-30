@@ -26,7 +26,8 @@ from .serializers import (
     TestSubmissionSerializer, TestResultSerializer, PathologyListSerializer, ClinicalCaseInfoSerializer,
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
-    VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer
+    VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
+    TutorialDeleteSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -115,8 +116,6 @@ def logoutView(request):
     )
 
     # 5. Удаляем куку роли (если вы ее ставили при логине)
-    # Мы используем строковое имя "user_role", так как в settings.SIMPLE_JWT его обычно нет по умолчанию.
-    # Но используем те же path и samesite, чтобы удаление точно сработало.
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
@@ -287,60 +286,40 @@ class SubmitTestView(views.APIView):
         # ---------------------------------------------------
         # 2. Сбор данных
         # ---------------------------------------------------
+        # Список ID кейсов, которые реально были в тесте
         case_ids = [item['caseId'] for item in submission_items]
 
-        # Карта: { ID_вопроса: {ID_ответа_1, ID_ответа_2} }
+        # Группировка ответов
         user_answers_map = {}
-        # Плоский список для сохранения истории
         user_selected_ids_flat = []
 
         for case_item in submission_items:
             for question_item in case_item['answers']:
                 q_id = question_item['questionId']
                 selected_ids = set(question_item['selectedAnswers'])
-
                 user_answers_map[q_id] = selected_ids
                 user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
         # ---------------------------------------------------
-        # 3. Определение Патологии
+        # 3. Подсчет баллов (СТРОГО по этим case_ids)
         # ---------------------------------------------------
-        first_case = get_object_or_404(Case, pk=case_ids[0])
-        pathology = first_case.pathology
-
-        # ---------------------------------------------------
-        # 4. ПОДСЧЕТ БАЛЛОВ (1 вопрос = 1 балл)
-        # ---------------------------------------------------
-
-        # Получаем список вопросов для этих кейсов
+        # Важно: фильтруем вопросы ТОЛЬКО по case_ids.
+        # Это гарантирует, что вопросы из других кейсов этой патологии НЕ учитываются.
         questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
 
         user_score = 0
         max_score = 0
 
         for question in questions_qs:
-            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
-            # Мы увеличиваем макс. балл на 1 за каждый ВОПРОС, а не за каждый правильный ответ.
-            max_score += 1
+            max_score += 1  # +1 балл за вопрос
 
-            # 1. Какие ответы правильные (множество ID)
-            correct_answer_ids = set(
-                ans.id for ans in question.answers.all() if ans.is_correct
-            )
-
-            # 2. Какие ответы выбрал юзер (множество ID)
+            correct_answer_ids = set(ans.id for ans in question.answers.all() if ans.is_correct)
             user_selected_set = user_answers_map.get(question.id, set())
 
-            # 3. Сравниваем множества целиком
-            # Если множества полностью совпадают -> +1 балл
-            # Если есть лишняя галочка или не хватает нужной -> 0 баллов
             if user_selected_set == correct_answer_ids:
                 user_score += 1
 
-        if max_score == 0:
-            max_score = 1
-
-        # Процент и Оценка
+        if max_score == 0: max_score = 1
         percentage = round((user_score / max_score) * 100, 2)
 
         if percentage >= 90:
@@ -352,8 +331,12 @@ class SubmitTestView(views.APIView):
         else:
             grade = "Неудовлетворительно"
 
+        # Определение патологии (для статистики)
+        first_case = get_object_or_404(Case, pk=case_ids[0])
+        pathology = first_case.pathology
+
         # ---------------------------------------------------
-        # 5. Сохранение результата
+        # 4. Сохранение
         # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
@@ -365,9 +348,9 @@ class SubmitTestView(views.APIView):
             time_spent=timedelta(seconds=duration_seconds)
         )
 
-        # ---------------------------------------------------
-        # 6. Сохранение истории ответов
-        # ---------------------------------------------------
+
+        test_result.cases.set(case_ids)
+
         if user_selected_ids_flat:
             selected_answers_objs = Answer.objects.filter(id__in=user_selected_ids_flat)
             user_test_answers = []
@@ -515,22 +498,21 @@ class UserTestHistoryView(generics.ListAPIView):
 
 class TestResultHistoryView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         id = kwargs.get('id')
         test_result = get_object_or_404(TestResult, id=id, user=request.user)
+
         selected_answer_ids = set(
             test_result.user_answers.values_list('answer_id', flat=True)
         )
-        pathology = test_result.pathology
-        if not pathology:
-            return response.Response({"items": []})
 
-        cases = Case.objects.filter(pathology=pathology).prefetch_related(
+        cases = test_result.cases.all().prefetch_related(
             'layers',
             'schemes',
             'questions',
             'questions__answers'
-        ).distinct()
+        )
 
         serializer = HistoryTaskSerializer(
             cases,
@@ -574,4 +556,12 @@ class TutorialCreateView(generics.CreateAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialCreateSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAdminOrAuthenticatedReadOnly]
+    permission_classes = [IsAdminOrSuperAdmin]
+
+
+class TutorialDeleteView(generics.DestroyAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialDeleteSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
