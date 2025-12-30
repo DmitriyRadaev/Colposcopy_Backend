@@ -266,7 +266,7 @@ class TestResultSerializer(serializers.ModelSerializer):
 class PathologyListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pathology
-        fields = ("id", "name")
+        fields = ("id", "name",'number')
 
 
 # Вспомогательный сериализатор, возвращает только ID кейса

@@ -148,6 +148,7 @@ class WorkerProfile(models.Model):
 class Pathology(models.Model):
     name = models.CharField(max_length=255, null=False, blank=False)
     description = models.TextField(null=False, blank=False)
+    number = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return self.name

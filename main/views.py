@@ -376,6 +376,7 @@ class SubmitTestView(views.APIView):
         return_serializer = TestResultSerializer(test_result)
         return response.Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
+
 class PathologyListInfoView(generics.ListAPIView):
     queryset = Pathology.objects.all()
     serializer_class = PathologyListSerializer
@@ -383,6 +384,8 @@ class PathologyListInfoView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+        queryset = queryset.order_by('number')
+
         serializer = self.get_serializer(queryset, many=True)
 
         return response.Response({
