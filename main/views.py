@@ -27,7 +27,7 @@ from .serializers import (
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
-    TutorialDeleteSerializer
+    TutorialDeleteSerializer, TestListSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -384,10 +384,36 @@ class PathologyListInfoView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        queryset = queryset.order_by('number')
+
+        queryset = queryset.annotate(
+            images_count=Count('images')
+        ).filter(
+            images_count__gt=0
+        ).order_by('number')
 
         serializer = self.get_serializer(queryset, many=True)
 
+        return response.Response({
+            "items": serializer.data
+        })
+class TestListInfoView(generics.ListAPIView):
+    """
+    Список патологий с тестами, у которых есть клинические случаи
+    """
+    serializer_class = TestListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Возвращаем только патологии с кейсами
+        return Pathology.objects.annotate(
+            cases_count=Count('cases')
+        ).filter(
+            cases_count__gt=0
+        ).order_by('number')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
         })
@@ -410,6 +436,7 @@ class ClinicalCaseListView(generics.ListAPIView):
         return response.Response({
             "items": serializer.data
         })
+
 
 class PathologyDetailView(generics.RetrieveAPIView):
     queryset = Pathology.objects.prefetch_related("images").all()

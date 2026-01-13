@@ -268,6 +268,10 @@ class PathologyListSerializer(serializers.ModelSerializer):
         model = Pathology
         fields = ("id", "name",'number')
 
+class TestListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Pathology
+        fields = ("id", "name",'number')
 
 # Вспомогательный сериализатор, возвращает только ID кейса
 class CaseIdSerializer(serializers.ModelSerializer):
