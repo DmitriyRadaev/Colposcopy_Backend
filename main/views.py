@@ -115,28 +115,26 @@ def logoutView(request):
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 5. Удаляем куку роли (если вы ее ставили при логине)
+    # 5. Удаляем куку роли
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # Если использовали is_staff
     res.delete_cookie(
         key="is_staff",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 6. Удаляем CSRF куки (стандартные Django настройки)
+    # 6. Удаляем CSRF куки
     res.delete_cookie(
         key=settings.CSRF_COOKIE_NAME,
         path='/',
         samesite=settings.CSRF_COOKIE_SAMESITE
     )
 
-    # Иногда фронтенд или Nginx могут ставить дублирующую куку, лучше почистить и её
     res.delete_cookie(
         key="X-CSRFToken",
         path='/',
@@ -301,10 +299,9 @@ class SubmitTestView(views.APIView):
                 user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
         # ---------------------------------------------------
-        # 3. Подсчет баллов (СТРОГО по этим case_ids)
+        # 3. Подсчет баллов
         # ---------------------------------------------------
-        # Важно: фильтруем вопросы ТОЛЬКО по case_ids.
-        # Это гарантирует, что вопросы из других кейсов этой патологии НЕ учитываются.
+        # Фильтруем вопросы ТОЛЬКО по case_ids.
         questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
 
         user_score = 0

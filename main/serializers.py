@@ -153,25 +153,33 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'case', 'name', 'instruction', 'qtype', 'answers']
-        # Делаем case необязательным при валидации, чтобы при создании через CaseSerializer
-        # не возникало ошибки (там case подставляется вручную).
-        # Но при прямом создании вопроса через /api/questions/ поле case обязательно.
         extra_kwargs = {'case': {'required': False}}
 
-    def create(self, validated_data):
-        """
-        Создание вопроса (POST /api/questions/).
-        Требует передачи 'case' в теле запроса.
-        """
-        answers_data = validated_data.pop('answers')
+    def validate(self, data):
+        answers_data = data.get('answers', [])
 
-        # Если создаем вопрос отдельно, case должен быть в validated_data
+        if not answers_data:
+            raise serializers.ValidationError({
+                'answers': 'Вопрос должен содержать хотя бы один ответ.'
+            })
+
+        # Проверяем, есть ли хотя бы один правильный ответ
+        has_correct_answer = any(answer.get('is_correct', False) for answer in answers_data)
+
+        if not has_correct_answer:
+            raise serializers.ValidationError({
+                'answers': 'Должен быть хотя бы один правильный ответ (is_correct=True).'
+            })
+
+        return data
+
+    def create(self, validated_data):
+        answers_data = validated_data.pop('answers')
         question = Question.objects.create(**validated_data)
 
         for ans in answers_data:
             Answer.objects.create(question=question, **ans)
         return question
-
 
 class CaseSerializer(serializers.ModelSerializer):
     # Вложенные сериализаторы для удобного заполнения (read/write)
