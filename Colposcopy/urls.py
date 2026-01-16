@@ -21,7 +21,7 @@ from main.views import (
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
     UserProfileView, UserTestHistoryView, TestResultHistoryView,
     TutorialListView, TutorialDetailView, TutorialCreateView, TutorialDeleteView,
-    TestListInfoView  # Новый view для тестирования
+    TestListInfoView, AdminPathologyListInfoView  # Новый view для тестирования
 )
 
 # ----------------------------
@@ -54,6 +54,7 @@ urlpatterns = [
     # Главные API
     path("api/", include(router.urls)),
     path('api/atlas/atlas-list/', PathologyListInfoView.as_view(), name='atlas-list-info'), # GET: Получить список всех патологий (только ID и Название) для меню атласа.
+    path('api/atlas/admin-atlas-list/',AdminPathologyListInfoView.as_view(), name='admin-atlas-list'), # GET Получить список всех паталогий для админки
     path('api/test/test-list/',TestListInfoView.as_view(), name='test-list-info'), # GET: Получить список всех тестов у которых есть кейсы
     path('api/clincal-cases/cases/', ClinicalCaseListView.as_view(), name='clinical-cases-list'), # GET: Получить список патологий, внутри которых лежат списки ID их клинических случаев.
     path('api/atlas/pathology/<int:id>/', PathologyDetailView.as_view(), name='pathology-detail'),  # GET: Получить полную информацию о конкретной патологии (описание, фотографии) по её ID.

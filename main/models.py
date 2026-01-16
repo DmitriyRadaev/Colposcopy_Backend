@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.db import models, transaction
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.db.models import F
 
 
 # -------------------------------------------------------------------------
@@ -159,6 +160,13 @@ class Pathology(models.Model):
                 )['max_num']
                 self.number = (max_num or 0) + 1
         super().save(*args, **kwargs)
+
+    def delete_and_renumber(cls, instance):
+        with transaction.atomic():
+            instance.delete()
+            cls.objects.select_for_update().filter(
+                number__gt=instance.number
+            ).update(number=F('number') - 1)
 
     def __str__(self):
         return self.name
