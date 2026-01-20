@@ -196,12 +196,6 @@ class CaseSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'pathology', 'created_at', 'layers', 'schemes', 'questions']
 
     def create(self, validated_data):
-        """
-        Создание Кейса со всей вложенной структурой:
-        Case -> Layers
-             -> Schemes
-             -> Questions -> Answers
-        """
         layers_data = validated_data.pop('layers', [])
         schemes_data = validated_data.pop('schemes', [])
         questions_data = validated_data.pop('questions', [])
@@ -320,46 +314,64 @@ class CaseDetailInfoSerializer(serializers.ModelSerializer):
 
     def get_imgContainer(self, obj):
         request = self.context.get('request')
-        urls = []
+        items = []
 
         # 1. Добавляем картинки слоев (Layers)
         layers = obj.layers.all().order_by('number')
         for layer in layers:
             if layer.layer_img:
-                url = layer.layer_img.url.replace('\\', '/')
+                url = layer.layer_img.url
+                # Фикс слэшей для Windows, если нужно
+                url = url.replace('\\', '/')
                 if request:
                     url = request.build_absolute_uri(url)
-                urls.append(url)
+                # Добавляем объект с ID и ссылкой
+                items.append({
+                    "id": layer.id,
+                    "image": url,
+                })
 
         # 2. Добавляем картинку схемы (Scheme) в КОНЕЦ этого же списка
         scheme = obj.schemes.first()
         if scheme and scheme.scheme_img:
-            url_scheme = scheme.scheme_img.url.replace('\\', '/')
+            url_scheme = scheme.scheme_img.url
+            url_scheme = url_scheme.replace('\\', '/')
             if request:
                 url_scheme = request.build_absolute_uri(url_scheme)
-            urls.append(url_scheme)
 
-        return urls
+            # Добавляем объект схемы
+            items.append({
+                "id": scheme.id,
+                "image": url_scheme,
+            })
+
+        return items
 
     def get_imgSchema(self, obj):
-        # Здесь возвращаем картинку ОПИСАНИЯ схемы (scheme_description_img)
+        """
+        Возвращает объект с картинкой описания схемы (легенда).
+        ID здесь будет равен ID самой схемы.
+        """
         request = self.context.get('request')
         scheme = obj.schemes.first()
 
         if scheme and scheme.scheme_description_img:
-            url = scheme.scheme_description_img.url.replace('\\', '/')
+            url = scheme.scheme_description_img.url
+            url = url.replace('\\', '/')
             if request:
-                return request.build_absolute_uri(url)
-            return url
-        return ""
+                url = request.build_absolute_uri(url)
+
+            # Возвращаем объект, а не строку
+            return {
+                "id": scheme.id,
+                "image": url
+            }
+        return None
 
     def get_descriptionContainer(self, obj):
-        # Текстовые описания слоев
         layers = obj.layers.all().order_by('number')
         descriptions = []
         for layer in layers:
-            # Добавляем описание, даже если оно пустое, чтобы индексы совпадали с картинками (если нужно)
-            # Или добавляем только если есть текст:
             if layer.layer_description:
                 descriptions.append(layer.layer_description)
         return descriptions
