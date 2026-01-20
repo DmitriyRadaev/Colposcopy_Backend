@@ -118,11 +118,15 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 # ОСНОВНОЙ КОНТЕНТ (АТЛАС, КЕЙСЫ)
 # -------------------------------------------------------------------------
 
-class PathologyImageSerializer(serializers.ModelSerializer):
+class PathologyInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = PathologyImage
         fields = ['id', 'image', 'pathology']
 
+class PathologyImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PathologyImage
+        fields = ['id', 'image']
 
 class LayerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -229,8 +233,6 @@ class CaseSerializer(serializers.ModelSerializer):
 
 class PathologySerializer(serializers.ModelSerializer):
     images = PathologyImageSerializer(many=True, read_only=True)
-    # Для просмотра списка кейсов внутри патологии (без глубокой вложенности вопросов, чтобы не грузить атлас)
-    # Если нужно видеть вопросы в атласе - уберите fields в CaseSerializer или создайте отдельный LiteCaseSerializer
     cases = CaseSerializer(many=True, read_only=True)
 
     class Meta:
@@ -296,21 +298,15 @@ class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "cases")
 
 class PathologyDetailInfoSerializer(serializers.ModelSerializer):
-    imgContainer = serializers.SerializerMethodField()
+    imgContainer = PathologyImageSerializer(
+        many=True,
+        read_only=True,
+        source='images'
+    )
 
     class Meta:
         model = Pathology
-        fields = ("id", "imgContainer", "description")
-
-    def get_imgContainer(self, obj):
-        request = self.context.get('request')
-        images = obj.images.all()
-        urls = []
-        for img in images:
-            if img.image:
-                url = request.build_absolute_uri(img.image.url) if request else img.image.url
-                urls.append(url)
-        return urls
+        fields = ("id", "description", "imgContainer")
 
 
 class CaseDetailInfoSerializer(serializers.ModelSerializer):

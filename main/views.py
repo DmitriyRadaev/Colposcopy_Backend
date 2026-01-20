@@ -27,7 +27,7 @@ from .serializers import (
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
-    TutorialDeleteSerializer, TestListSerializer
+    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -234,7 +234,7 @@ class PathologyViewSet(viewsets.ModelViewSet):
 
 class PathologyImageViewSet(viewsets.ModelViewSet):
     queryset = PathologyImage.objects.all()
-    serializer_class = PathologyImageSerializer
+    serializer_class = PathologyInfoSerializer
     permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
