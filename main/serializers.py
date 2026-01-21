@@ -644,3 +644,22 @@ class TutorialUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
         fields = ('id', 'name', 'video', 'poster', 'description', 'tutorial_file')
+
+# Для обновления названия кейса
+class CaseUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Case
+        fields = ("id", "name")
+
+# Для обновления слоя (картинка + описание)
+class LayerUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Layer
+        fields = ("id", "layer_img", "layer_description")
+
+# Для обновления схемы (обе картинки)
+class SchemeUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Scheme
+        fields = ("id", "scheme_img", "scheme_description_img")
+

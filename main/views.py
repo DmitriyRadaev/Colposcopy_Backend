@@ -27,7 +27,8 @@ from .serializers import (
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
-    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer
+    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer,
+    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -610,5 +611,27 @@ class TutorialDeleteView(generics.DestroyAPIView):
 class TutorialUpdateView(generics.UpdateAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+
+# 1. Редактирование самого кейса (Названия)
+class CaseUpdateView(generics.UpdateAPIView):
+    queryset = Case.objects.all()
+    serializer_class = CaseUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin] # Лучше IsAdminUser
+    lookup_field = 'id'
+
+# 2. Редактирование конкретного слоя
+class LayerUpdateView(generics.UpdateAPIView):
+    queryset = Layer.objects.all()
+    serializer_class = LayerUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+# 3. Редактирование схемы
+class SchemeUpdateView(generics.UpdateAPIView):
+    queryset = Scheme.objects.all()
+    serializer_class = SchemeUpdateSerializer
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
