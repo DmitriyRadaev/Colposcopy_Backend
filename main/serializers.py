@@ -639,3 +639,8 @@ class TutorialDeleteSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
         fields = ('id',)
+
+class TutorialUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id', 'name', 'video', 'poster', 'description', 'tutorial_file')

@@ -27,7 +27,7 @@ from .serializers import (
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
-    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer
+    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -607,3 +607,8 @@ class TutorialDeleteView(generics.DestroyAPIView):
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
+class TutorialUpdateView(generics.UpdateAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
