@@ -28,7 +28,7 @@ from .serializers import (
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
     TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer,
-    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer
+    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer, QuestionUpdateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -619,7 +619,7 @@ class TutorialUpdateView(generics.UpdateAPIView):
 class CaseUpdateView(generics.UpdateAPIView):
     queryset = Case.objects.all()
     serializer_class = CaseUpdateSerializer
-    permission_classes = [IsAdminOrSuperAdmin] # Лучше IsAdminUser
+    permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
 # 2. Редактирование конкретного слоя
@@ -634,4 +634,10 @@ class SchemeUpdateView(generics.UpdateAPIView):
     queryset = Scheme.objects.all()
     serializer_class = SchemeUpdateSerializer
     permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+class QuestionUpdateView(generics.UpdateAPIView):
+    queryset = Question.objects.all()
+    serializer_class = QuestionUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'

@@ -663,3 +663,49 @@ class SchemeUpdateSerializer(serializers.ModelSerializer):
         model = Scheme
         fields = ("id", "scheme_img", "scheme_description_img")
 
+class AnswerNestedEditSerializer(serializers.ModelSerializer):
+    # Обязательно разрешаем id для записи
+    id = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = Answer
+        fields = ('id', 'text', 'is_correct')
+
+
+class QuestionUpdateSerializer(serializers.ModelSerializer):
+    # required=False, чтобы можно было обновить только название вопроса, не трогая ответы
+    answers = AnswerNestedEditSerializer(many=True, required=False)
+
+    class Meta:
+        model = Question
+        fields = ('id', 'name', 'instruction', 'qtype', 'answers')
+
+    def update(self, instance, validated_data):
+        # 1. Обновляем поля вопроса
+        instance.name = validated_data.get('name', instance.name)
+        instance.instruction = validated_data.get('instruction', instance.instruction)
+        instance.qtype = validated_data.get('qtype', instance.qtype)
+        instance.save()
+
+        # 2. Обрабатываем ответы (только если они пришли)
+        answers_data = validated_data.get('answers')
+
+        if answers_data is not None:
+            for ans_item in answers_data:
+                ans_id = ans_item.get('id')
+
+                if ans_id:
+
+                    # Ищем ответ. filter(id=ans_id, question=instance)
+                    answer_obj = instance.answers.filter(id=ans_id).first()
+                    if answer_obj:
+                        answer_obj.text = ans_item.get('text', answer_obj.text)
+                        answer_obj.is_correct = ans_item.get('is_correct', answer_obj.is_correct)
+                        answer_obj.save()
+                else:
+                    # --- СОЗДАНИЕ ---
+                    Answer.objects.create(question=instance, **ans_item)
+
+
+
+        return instance

@@ -21,7 +21,8 @@ from main.views import (
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
     UserProfileView, UserTestHistoryView, TestResultHistoryView,
     TutorialListView, TutorialDetailView, TutorialCreateView, TutorialDeleteView,
-    TestListInfoView, AdminPathologyListInfoView, TutorialUpdateView, CaseUpdateView, LayerUpdateView, SchemeUpdateView
+    TestListInfoView, AdminPathologyListInfoView, TutorialUpdateView, CaseUpdateView, LayerUpdateView, SchemeUpdateView,
+    QuestionUpdateView
 )
 
 # ----------------------------
@@ -66,14 +67,15 @@ urlpatterns = [
     path('api/account/try-list/', UserTestHistoryView.as_view(), name='profile-history'), # GET: Получить список всех попыток прохождения тестов текущего пользователя (Дата, Оценка, Время).
     path('api/account/attempt/<int:id>/', TestResultHistoryView.as_view(), name='history-detail'),  # GET: Получить детальный разбор конкретной попытки по её ID.
     path('api/admin-zone/', admin.site.urls),    # Админ-панель Django.
-    path('api/tutorial/tutorials-list/', TutorialListView.as_view(), name='tutorials-list'),      # GET: Получить список туториалов
-    path('api/tutorial/<int:id>/', TutorialDetailView.as_view(), name='tutorial-detail'),         # GET: Получить детальную информацию о туториале по ID
-    path('api/tutorial/create/', TutorialCreateView.as_view(), name='tutorial-create'),           # POST: Создать туториал
-    path('api/tutorial/delete/<int:id>/', TutorialDeleteView.as_view(), name='tutorial-delete'),  # DELETE: Удалить туториал
-    path('api/tutorial/update/<int:id>/', TutorialUpdateView.as_view(), name='tutorial-update'),  # UPDATE: Редактирование туториала
-    path('api/cases/update/<int:id>/', CaseUpdateView.as_view(), name='case-update'),             # UPDATE: Редактирование случая
-    path('api/layers/update/<int:id>/', LayerUpdateView.as_view(), name='layer-update'),          # UPDATE: Редактирование слоя
-    path('api/schemes/update/<int:id>/', SchemeUpdateView.as_view(), name='scheme-update'),       # UPDATE : Редактирование схем
+    path('api/tutorial/tutorials-list/', TutorialListView.as_view(), name='tutorials-list'),            # GET: Получить список туториалов
+    path('api/tutorial/<int:id>/', TutorialDetailView.as_view(), name='tutorial-detail'),               # GET: Получить детальную информацию о туториале по ID
+    path('api/tutorial/create/', TutorialCreateView.as_view(), name='tutorial-create'),                 # POST: Создать туториал
+    path('api/tutorial/delete/<int:id>/', TutorialDeleteView.as_view(), name='tutorial-delete'),        # DELETE: Удалить туториал
+    path('api/tutorial/update/<int:id>/', TutorialUpdateView.as_view(), name='tutorial-update'),        # UPDATE: Редактирование туториала
+    path('api/cases/update/<int:id>/', CaseUpdateView.as_view(), name='case-update'),                   # UPDATE: Редактирование случая
+    path('api/layers/update/<int:id>/', LayerUpdateView.as_view(), name='layer-update'),                # UPDATE: Редактирование слоя
+    path('api/schemes/update/<int:id>/', SchemeUpdateView.as_view(), name='scheme-update'),             # UPDATE : Редактирование схем
+    path('api/questions/update/<int:id>/', QuestionUpdateView.as_view(), name='question-smart-update'), # UPDATE : Редактирование вопросов
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
