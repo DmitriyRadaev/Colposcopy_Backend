@@ -1,4 +1,5 @@
 # serializers.py
+from django.db import transaction
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
@@ -663,49 +664,119 @@ class SchemeUpdateSerializer(serializers.ModelSerializer):
         model = Scheme
         fields = ("id", "scheme_img", "scheme_description_img")
 
-class AnswerNestedEditSerializer(serializers.ModelSerializer):
-    # Обязательно разрешаем id для записи
-    id = serializers.IntegerField(required=False)
+# class AnswerNestedEditSerializer(serializers.ModelSerializer):
+#     # Обязательно разрешаем id для записи
+#     id = serializers.IntegerField(required=False)
+#
+#     class Meta:
+#         model = Answer
+#         fields = ('id', 'text', 'is_correct')
+
+
+# class QuestionUpdateSerializer(serializers.ModelSerializer):
+#     answers = AnswerNestedEditSerializer(many=True, required=False)
+#
+#     class Meta:
+#         model = Question
+#         fields = ('id', 'name', 'instruction', 'qtype', 'answers')
+#
+#     def update(self, instance, validated_data):
+#         # 1. Обновляем поля вопроса
+#         instance.name = validated_data.get('name', instance.name)
+#         instance.instruction = validated_data.get('instruction', instance.instruction)
+#         instance.qtype = validated_data.get('qtype', instance.qtype)
+#         instance.save()
+#
+#         # 2. Обрабатываем ответы (только если они пришли)
+#         answers_data = validated_data.get('answers')
+#
+#         if answers_data is not None:
+#             for ans_item in answers_data:
+#                 ans_id = ans_item.get('id')
+#
+#                 if ans_id:
+#
+#                     # Ищем ответ. filter(id=ans_id, question=instance)
+#                     answer_obj = instance.answers.filter(id=ans_id).first()
+#                     if answer_obj:
+#                         answer_obj.text = ans_item.get('text', answer_obj.text)
+#                         answer_obj.is_correct = ans_item.get('is_correct', answer_obj.is_correct)
+#                         answer_obj.save()
+#                 else:
+#                     # --- СОЗДАНИЕ ---
+#                     Answer.objects.create(question=instance, **ans_item)
+#
+#
+#
+#         return instance
+
+
+# 1. Сериализатор для ОТВЕТОВ
+class AnswerDtoSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)  # Позволяет передавать ID для обновления
 
     class Meta:
         model = Answer
         fields = ('id', 'text', 'is_correct')
 
 
-class QuestionUpdateSerializer(serializers.ModelSerializer):
-    # required=False, чтобы можно было обновить только название вопроса, не трогая ответы
-    answers = AnswerNestedEditSerializer(many=True, required=False)
+# 2. Сериализатор для ВОПРОСОВ (внутри которого ответы)
+class QuestionDtoSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+    answers = AnswerDtoSerializer(many=True, required=False)
 
     class Meta:
         model = Question
         fields = ('id', 'name', 'instruction', 'qtype', 'answers')
 
+    def update_or_create_answers(self, question, answers_data):
+        for ans_data in answers_data:
+            ans_id = ans_data.get('id')
+            if ans_id:
+                # Обновляем существующий ответ
+                Answer.objects.filter(id=ans_id, question=question).update(**ans_data)
+            else:
+                # Создаем новый ответ
+                Answer.objects.create(question=question, **ans_data)
+
+
+# 3. ГЛАВНЫЙ СЕРИАЛИЗАТОР (Кейс -> Вопросы -> Ответы)
+class CaseFullUpdateSerializer(serializers.ModelSerializer):
+    # Называем поле 'questions', как в структуре
+    questions = QuestionDtoSerializer(many=True, required=False)
+
+    class Meta:
+        model = Case
+        fields = ('id', 'name', 'questions')
+
+    @transaction.atomic
     def update(self, instance, validated_data):
-        # 1. Обновляем поля вопроса
+        # 1. Обновляем поля самого Кейса (например, имя)
         instance.name = validated_data.get('name', instance.name)
-        instance.instruction = validated_data.get('instruction', instance.instruction)
-        instance.qtype = validated_data.get('qtype', instance.qtype)
         instance.save()
 
-        # 2. Обрабатываем ответы (только если они пришли)
-        answers_data = validated_data.get('answers')
+        # 2. Обрабатываем вложенные вопросы
+        questions_data = validated_data.get('questions')
+        if questions_data is not None:
+            for q_data in questions_data:
+                q_id = q_data.get('id')
+                answers_data = q_data.pop('answers', None)
 
-        if answers_data is not None:
-            for ans_item in answers_data:
-                ans_id = ans_item.get('id')
+                if q_id:
+                    # А. Обновляем существующий вопрос
+                    question_obj = instance.questions.filter(id=q_id).first()
+                    if question_obj:
+                        for attr, value in q_data.items():
+                            setattr(question_obj, attr, value)
+                        question_obj.save()
 
-                if ans_id:
-
-                    # Ищем ответ. filter(id=ans_id, question=instance)
-                    answer_obj = instance.answers.filter(id=ans_id).first()
-                    if answer_obj:
-                        answer_obj.text = ans_item.get('text', answer_obj.text)
-                        answer_obj.is_correct = ans_item.get('is_correct', answer_obj.is_correct)
-                        answer_obj.save()
+                        # Обновляем ответы внутри этого вопроса
+                        if answers_data is not None:
+                            self.fields['questions'].child.update_or_create_answers(question_obj, answers_data)
                 else:
-                    # --- СОЗДАНИЕ ---
-                    Answer.objects.create(question=instance, **ans_item)
-
-
+                    # Б. Создаем новый вопрос
+                    new_q = Question.objects.create(case=instance, **q_data)
+                    if answers_data:
+                        self.fields['questions'].child.update_or_create_answers(new_q, answers_data)
 
         return instance

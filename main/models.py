@@ -234,6 +234,9 @@ class Question(models.Model):
     instruction = models.CharField(max_length=255, null=False, blank=False)
     qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
 
+    class Meta:
+        ordering = ['id']
+
     def __str__(self):
         return self.name
 
@@ -242,6 +245,9 @@ class Answer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='answers')
     text = models.CharField(max_length=255)
     is_correct = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['id']
 
     def __str__(self):
         return self.text

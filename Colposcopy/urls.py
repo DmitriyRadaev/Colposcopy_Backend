@@ -21,8 +21,7 @@ from main.views import (
     ClinicalCaseListView, PathologyDetailView, CaseDetailInfoView, GetTestTasksView,
     UserProfileView, UserTestHistoryView, TestResultHistoryView,
     TutorialListView, TutorialDetailView, TutorialCreateView, TutorialDeleteView,
-    TestListInfoView, AdminPathologyListInfoView, TutorialUpdateView, CaseUpdateView, LayerUpdateView, SchemeUpdateView,
-    QuestionUpdateView
+    TestListInfoView, AdminPathologyListInfoView, TutorialUpdateView, CaseUpdateView, LayerUpdateView, SchemeUpdateView, CaseQuestionsUpdateView
 )
 
 # ----------------------------
@@ -75,7 +74,9 @@ urlpatterns = [
     path('api/cases/update/<int:id>/', CaseUpdateView.as_view(), name='case-update'),                   # UPDATE: Редактирование случая
     path('api/layers/update/<int:id>/', LayerUpdateView.as_view(), name='layer-update'),                # UPDATE: Редактирование слоя
     path('api/schemes/update/<int:id>/', SchemeUpdateView.as_view(), name='scheme-update'),             # UPDATE : Редактирование схем
-    path('api/questions/update/<int:id>/', QuestionUpdateView.as_view(), name='question-smart-update'), # UPDATE : Редактирование вопросов
+    # path('api/questions/update/<int:id>/', QuestionUpdateView.as_view(), name='question-smart-update'), # UPDATE : Редактирование вопросов
+
+    path('api/questions/update/<int:id>/', CaseQuestionsUpdateView.as_view(), name='update-case-questions'),
 
     re_path(r'^media/(?P<path>.*)$', serve,{'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),

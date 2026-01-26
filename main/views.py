@@ -28,7 +28,8 @@ from .serializers import (
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
     TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer,
-    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer, QuestionUpdateSerializer
+    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer,
+    CaseFullUpdateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -89,7 +90,7 @@ def loginView(request):
 @decorators.api_view(["POST"])
 @decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
-    # 1. Блэклист refresh токена
+
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if refresh_token:
@@ -99,24 +100,24 @@ def logoutView(request):
         # Если токен уже невалиден или его нет, игнорируем
         pass
 
-    # 2. Формируем ответ
+
     res = response.Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
-    # 3. Удаляем Access Token
+
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 4. Удаляем Refresh Token
+
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 5. Удаляем куку роли
+
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
@@ -129,7 +130,7 @@ def logoutView(request):
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 6. Удаляем CSRF куки
+
     res.delete_cookie(
         key=settings.CSRF_COOKIE_NAME,
         path='/',
@@ -636,8 +637,15 @@ class SchemeUpdateView(generics.UpdateAPIView):
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
-class QuestionUpdateView(generics.UpdateAPIView):
-    queryset = Question.objects.all()
-    serializer_class = QuestionUpdateSerializer
+# class QuestionUpdateView(generics.UpdateAPIView):
+#     queryset = Question.objects.all()
+#     serializer_class = QuestionUpdateSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     lookup_field = 'id'
+
+
+class CaseQuestionsUpdateView(generics.RetrieveUpdateAPIView):
+    queryset = Case.objects.prefetch_related('questions__answers').all()
+    serializer_class = CaseFullUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
+    lookup_field = 'id' # Поиск по ID кейса в URL
