@@ -48,36 +48,35 @@ def get_user_tokens(user):
 def loginView(request):
     email = request.data.get("email")
     password = request.data.get("password")
-    if not email or not password:
-        raise rest_exceptions.ValidationError({"detail": "Email and password required"})
-
     user = authenticate(email=email, password=password)
-    if not user:
-        raise rest_exceptions.AuthenticationFailed("Email or password is incorrect!")
 
+    # Если пользователь есть, но пароль не подошел
+    if not user:
+        return response.Response({"error": "Неверный адрес электронной почты или пароль"}, status=status.HTTP_401_UNAUTHORIZED)
     tokens_dict = get_user_tokens(user)
     res = response.Response(tokens_dict)
 
+    # Установка кук
     res.set_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         value=tokens_dict["access_token"],
-        expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
-        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+        httponly=True,
+        samesite='Lax'
     )
     res.set_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         value=tokens_dict["refresh_token"],
-        expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
-        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+        httponly=True,
+        samesite='Lax'
     )
     res.set_cookie(
         key="user_role",
         value="admin" if user.is_staff else "worker",
-        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
         httponly=True,
         samesite='Lax'
@@ -166,7 +165,7 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
                 value=response_obj.data['access'],
                 expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
                 secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-                httponly=True, # Жестко True
+                httponly=True,
                 samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
             )
             del response_obj.data["access"]
@@ -193,13 +192,18 @@ def current_user_view(request):
     return response.Response(serializer.data)
 
 
-# -------------------------------------------------------------------------
 # РЕГИСТРАЦИЯ И ПРОФИЛИ
-# -------------------------------------------------------------------------
 
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
     permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        if Account.objects.filter(email=email).exists():
+            return response.Response({"error": "Пользователь с такой почтой уже существует"},
+                                     status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class AdminRegisterView(generics.CreateAPIView):
@@ -224,9 +228,7 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
         return WorkerProfile.objects.filter(user=user)
 
 
-# -------------------------------------------------------------------------
 # ОСНОВНАЯ ЛОГИКА (CRUD)
-# -------------------------------------------------------------------------
 
 class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
@@ -262,10 +264,7 @@ class SchemeViewSet(viewsets.ModelViewSet):
     serializer_class = SchemeSerializer
     permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
-
-# -------------------------------------------------------------------------
 # ЛОГИКА ТЕСТИРОВАНИЯ
-# -------------------------------------------------------------------------
 
 class SubmitTestView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -411,9 +410,6 @@ class AdminPathologyListInfoView(generics.ListAPIView):
         })
 
 class TestListInfoView(generics.ListAPIView):
-    """
-    Список патологий с тестами, у которых есть клинические случаи
-    """
     serializer_class = TestListSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -572,7 +568,7 @@ class TestResultHistoryView(generics.RetrieveAPIView):
         })
 
 
-# 1. Список туториалов
+# Список туториалов
 class TutorialListView(generics.ListAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialListSerializer
@@ -588,7 +584,7 @@ class TutorialListView(generics.ListAPIView):
         })
 
 
-# 2. Детальная информация о туториале
+# Детальная информация о туториале
 class TutorialDetailView(generics.RetrieveAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialDetailSerializer
@@ -616,21 +612,21 @@ class TutorialUpdateView(generics.UpdateAPIView):
     lookup_field = 'id'
 
 
-# 1. Редактирование самого кейса (Названия)
+# Редактирование самого кейса (Названия)
 class CaseUpdateView(generics.UpdateAPIView):
     queryset = Case.objects.all()
     serializer_class = CaseUpdateSerializer
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
-# 2. Редактирование конкретного слоя
+# Редактирование конкретного слоя
 class LayerUpdateView(generics.UpdateAPIView):
     queryset = Layer.objects.all()
     serializer_class = LayerUpdateSerializer
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
-# 3. Редактирование схемы
+# Редактирование схемы
 class SchemeUpdateView(generics.UpdateAPIView):
     queryset = Scheme.objects.all()
     serializer_class = SchemeUpdateSerializer
@@ -648,4 +644,4 @@ class CaseQuestionsUpdateView(generics.RetrieveUpdateAPIView):
     queryset = Case.objects.prefetch_related('questions__answers').all()
     serializer_class = CaseFullUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id' # Поиск по ID кейса в URL
+    lookup_field = 'id'
