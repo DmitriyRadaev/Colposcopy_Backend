@@ -1,12 +1,11 @@
 # models.py
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.db.models import F
 
 
-# -------------------------------------------------------------------------
 # ACCOUNT / AUTHENTICATION
-# -------------------------------------------------------------------------
 class AccountManager(BaseUserManager):
     def create_user(self, email, name, surname, patronymic=None, password=None, role="WORKER", **kwargs):
         if not email:
@@ -141,13 +140,29 @@ class WorkerProfile(models.Model):
         return f"Profile for {self.user.email}"
 
 
-# -------------------------------------------------------------------------
-# MAIN CONTENT MODELS
-# -------------------------------------------------------------------------
+# Основые модели
 
 class Pathology(models.Model):
     name = models.CharField(max_length=255, null=False, blank=False)
     description = models.TextField(null=False, blank=False)
+    number = models.IntegerField(null=True, blank=True, unique=True)
+
+    def save(self, *args, **kwargs):
+        if self.number is None:
+            with transaction.atomic():
+                # Блокируем таблицу для предотвращения конфликтов
+                max_num = Pathology.objects.select_for_update().aggregate(
+                    max_num=models.Max('number')
+                )['max_num']
+                self.number = (max_num or 0) + 1
+        super().save(*args, **kwargs)
+
+    def delete_and_renumber(cls, instance):
+        with transaction.atomic():
+            instance.delete()
+            cls.objects.select_for_update().filter(
+                number__gt=instance.number
+            ).update(number=F('number') - 1)
 
     def __str__(self):
         return self.name
@@ -199,9 +214,7 @@ class Scheme(models.Model):
     scheme_description_img = models.ImageField(upload_to="schemes/scheme_description_img/")
 
 
-# -------------------------------------------------------------------------
-# TESTING LOGIC
-# -------------------------------------------------------------------------
+# Тестовые модели
 
 class Question(models.Model):
     class qtype(models.TextChoices):
@@ -215,6 +228,9 @@ class Question(models.Model):
     instruction = models.CharField(max_length=255, null=False, blank=False)
     qtype = models.CharField(max_length=20, choices=qtype.choices, default=qtype.single)
 
+    class Meta:
+        ordering = ['id']
+
     def __str__(self):
         return self.name
 
@@ -224,14 +240,14 @@ class Answer(models.Model):
     text = models.CharField(max_length=255)
     is_correct = models.BooleanField(default=False)
 
+    class Meta:
+        ordering = ['id']
+
     def __str__(self):
         return self.text
 
 
 class TestResult(models.Model):
-    """
-    Модель для хранения истории прохождения тестов пользователями.
-    """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="test_results")
     pathology = models.ForeignKey(Pathology, on_delete=models.SET_NULL, null=True, related_name="test_results")
 

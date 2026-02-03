@@ -1,13 +1,13 @@
 # serializers.py
+from django.db import transaction
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
     WorkerProfile, Case, Layer, Question, Pathology, Scheme, Answer, PathologyImage, TestResult, VideoTutorial
 )
 
-# -------------------------------------------------------------------------
+
 # АУТЕНТИФИКАЦИЯ И ПОЛЬЗОВАТЕЛИ
-# -------------------------------------------------------------------------
 Account = get_user_model()
 
 
@@ -114,15 +114,17 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
         fields = ("id", "user", "work", "position")
 
 
-# -------------------------------------------------------------------------
 # ОСНОВНОЙ КОНТЕНТ (АТЛАС, КЕЙСЫ)
-# -------------------------------------------------------------------------
 
-class PathologyImageSerializer(serializers.ModelSerializer):
+class PathologyInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = PathologyImage
         fields = ['id', 'image', 'pathology']
 
+class PathologyImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PathologyImage
+        fields = ['id', 'image']
 
 class LayerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -153,25 +155,33 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'case', 'name', 'instruction', 'qtype', 'answers']
-        # Делаем case необязательным при валидации, чтобы при создании через CaseSerializer
-        # не возникало ошибки (там case подставляется вручную).
-        # Но при прямом создании вопроса через /api/questions/ поле case обязательно.
         extra_kwargs = {'case': {'required': False}}
 
-    def create(self, validated_data):
-        """
-        Создание вопроса (POST /api/questions/).
-        Требует передачи 'case' в теле запроса.
-        """
-        answers_data = validated_data.pop('answers')
+    def validate(self, data):
+        answers_data = data.get('answers', [])
 
-        # Если создаем вопрос отдельно, case должен быть в validated_data
+        if not answers_data:
+            raise serializers.ValidationError({
+                'answers': 'Вопрос должен содержать хотя бы один ответ.'
+            })
+
+        # Проверяем, есть ли хотя бы один правильный ответ
+        has_correct_answer = any(answer.get('is_correct', False) for answer in answers_data)
+
+        if not has_correct_answer:
+            raise serializers.ValidationError({
+                'answers': 'Должен быть хотя бы один правильный ответ (is_correct=True).'
+            })
+
+        return data
+
+    def create(self, validated_data):
+        answers_data = validated_data.pop('answers')
         question = Question.objects.create(**validated_data)
 
         for ans in answers_data:
             Answer.objects.create(question=question, **ans)
         return question
-
 
 class CaseSerializer(serializers.ModelSerializer):
     # Вложенные сериализаторы для удобного заполнения (read/write)
@@ -184,28 +194,18 @@ class CaseSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'pathology', 'created_at', 'layers', 'schemes', 'questions']
 
     def create(self, validated_data):
-        """
-        Создание Кейса со всей вложенной структурой:
-        Case -> Layers
-             -> Schemes
-             -> Questions -> Answers
-        """
         layers_data = validated_data.pop('layers', [])
         schemes_data = validated_data.pop('schemes', [])
         questions_data = validated_data.pop('questions', [])
 
-        # 1. Создаем сам Case
         case = Case.objects.create(**validated_data)
 
-        # 2. Создаем Layers
         for layer_data in layers_data:
             Layer.objects.create(case=case, **layer_data)
 
-        # 3. Создаем Schemes
         for scheme_data in schemes_data:
             Scheme.objects.create(case=case, **scheme_data)
 
-        # 4. Создаем Questions (и внутри Answers)
         for q_data in questions_data:
             answers_data = q_data.pop('answers', [])
 
@@ -221,8 +221,6 @@ class CaseSerializer(serializers.ModelSerializer):
 
 class PathologySerializer(serializers.ModelSerializer):
     images = PathologyImageSerializer(many=True, read_only=True)
-    # Для просмотра списка кейсов внутри патологии (без глубокой вложенности вопросов, чтобы не грузить атлас)
-    # Если нужно видеть вопросы в атласе - уберите fields в CaseSerializer или создайте отдельный LiteCaseSerializer
     cases = CaseSerializer(many=True, read_only=True)
 
     class Meta:
@@ -233,9 +231,8 @@ class VideoTutorialSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
         fields = ['video', 'video_instruction']
-# -------------------------------------------------------------------------
+
 # ЛОГИКА ТЕСТИРОВАНИЯ
-# -------------------------------------------------------------------------
 
 class TestSubmissionSerializer(serializers.Serializer):
     pathology_id = serializers.IntegerField()
@@ -252,7 +249,7 @@ class TestSubmissionSerializer(serializers.Serializer):
     )
 
 
-# Сериализатор для ОТВЕТА сервера (результат теста)
+# Сериализатор для ответа сервера (результат теста)
 class TestResultSerializer(serializers.ModelSerializer):
     pathology_name = serializers.CharField(source='pathology.name', read_only=True)
     user_name = serializers.CharField(source='user.name', read_only=True)
@@ -262,12 +259,15 @@ class TestResultSerializer(serializers.ModelSerializer):
         fields = ['id', 'user_name', 'pathology_name', 'score', 'max_score', 'percentage', 'grade', 'created_at']
 
 
-
 class PathologyListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pathology
-        fields = ("id", "name")
+        fields = ("id", "name",'number')
 
+class TestListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Pathology
+        fields = ("id", "name",'number')
 
 # Вспомогательный сериализатор, возвращает только ID кейса
 class CaseIdSerializer(serializers.ModelSerializer):
@@ -284,21 +284,15 @@ class ClinicalCaseInfoSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "cases")
 
 class PathologyDetailInfoSerializer(serializers.ModelSerializer):
-    imgContainer = serializers.SerializerMethodField()
+    imgContainer = PathologyImageSerializer(
+        many=True,
+        read_only=True,
+        source='images'
+    )
 
     class Meta:
         model = Pathology
-        fields = ("id", "imgContainer", "description")
-
-    def get_imgContainer(self, obj):
-        request = self.context.get('request')
-        images = obj.images.all()
-        urls = []
-        for img in images:
-            if img.image:
-                url = request.build_absolute_uri(img.image.url) if request else img.image.url
-                urls.append(url)
-        return urls
+        fields = ("id", "description", "imgContainer")
 
 
 class CaseDetailInfoSerializer(serializers.ModelSerializer):
@@ -312,46 +306,57 @@ class CaseDetailInfoSerializer(serializers.ModelSerializer):
 
     def get_imgContainer(self, obj):
         request = self.context.get('request')
-        urls = []
-
-        # 1. Добавляем картинки слоев (Layers)
+        items = []
         layers = obj.layers.all().order_by('number')
         for layer in layers:
             if layer.layer_img:
-                url = layer.layer_img.url.replace('\\', '/')
+                url = layer.layer_img.url
+                # Фикс слэшей для Windows, если нужно
+                url = url.replace('\\', '/')
                 if request:
                     url = request.build_absolute_uri(url)
-                urls.append(url)
+                # Добавляем объект с ID и ссылкой
+                items.append({
+                    "id": layer.id,
+                    "image": url,
+                })
 
-        # 2. Добавляем картинку схемы (Scheme) в КОНЕЦ этого же списка
         scheme = obj.schemes.first()
         if scheme and scheme.scheme_img:
-            url_scheme = scheme.scheme_img.url.replace('\\', '/')
+            url_scheme = scheme.scheme_img.url
+            url_scheme = url_scheme.replace('\\', '/')
             if request:
                 url_scheme = request.build_absolute_uri(url_scheme)
-            urls.append(url_scheme)
 
-        return urls
+            # Добавляем объект схемы
+            items.append({
+                "id": scheme.id,
+                "image": url_scheme,
+            })
+
+        return items
 
     def get_imgSchema(self, obj):
-        # Здесь возвращаем картинку ОПИСАНИЯ схемы (scheme_description_img)
         request = self.context.get('request')
         scheme = obj.schemes.first()
 
         if scheme and scheme.scheme_description_img:
-            url = scheme.scheme_description_img.url.replace('\\', '/')
+            url = scheme.scheme_description_img.url
+            url = url.replace('\\', '/')
             if request:
-                return request.build_absolute_uri(url)
-            return url
-        return ""
+                url = request.build_absolute_uri(url)
+
+            # Возвращаем объект, а не строку
+            return {
+                "id": scheme.id,
+                "image": url
+            }
+        return None
 
     def get_descriptionContainer(self, obj):
-        # Текстовые описания слоев
         layers = obj.layers.all().order_by('number')
         descriptions = []
         for layer in layers:
-            # Добавляем описание, даже если оно пустое, чтобы индексы совпадали с картинками (если нужно)
-            # Или добавляем только если есть текст:
             if layer.layer_description:
                 descriptions.append(layer.layer_description)
         return descriptions
@@ -364,7 +369,6 @@ class TestAnswerSerializer(serializers.ModelSerializer):
 
 class TestQuestionSerializer(serializers.ModelSerializer):
     question = serializers.CharField(source='name')
-    # Меняем IntegerField на SerializerMethodField, чтобы обработать вручную
     typeQuestion = serializers.SerializerMethodField()
     instructions = serializers.CharField(source='instruction')
     answers = TestAnswerSerializer(many=True)
@@ -374,9 +378,6 @@ class TestQuestionSerializer(serializers.ModelSerializer):
         fields = ('id', 'question', 'typeQuestion', 'instructions', 'answers')
 
     def get_typeQuestion(self, obj):
-        # Логика превращения текста в цифру для фронта
-        # Если в базе "multiple" -> отправляем 1
-        # Если "single" или что-то другое -> отправляем 0
         if str(obj.qtype).lower() == "multiple":
             return 1
         return 0
@@ -439,40 +440,24 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-
-        # 1. Достаем данные из профиля (WorkerProfile)
-        # Используем getattr, чтобы не упасть с ошибкой, если профиля нет
         profile = getattr(instance, 'worker_profile', None)
 
         data['work'] = profile.work if profile else ""
         data['position'] = profile.position if profile else ""
-
-        # 2. Пароль всегда возвращаем пустой (заглушка)
         data['password'] = ""
 
         return data
 
     def update(self, instance, validated_data):
-        """
-        Этот метод срабатывает при сохранении (PUT/PATCH запрос).
-        """
-        # 1. Извлекаем данные, которые не относятся напрямую к модели Account
         work = validated_data.pop('work', None)
         position = validated_data.pop('position', None)
         password = validated_data.pop('password', None)
-
-        # 2. Обновляем основные поля Account (email, name, surname...)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-
-        # 3. Если пришел пароль и он не пустой — обновляем его
         if password:
             instance.set_password(password)
 
         instance.save()
-
-        # 4. Обновляем или создаем профиль работника
-        # Если work или position пришли в запросе (даже если пустые строки)
         if work is not None or position is not None:
             WorkerProfile.objects.update_or_create(
                 user=instance,
@@ -542,21 +527,10 @@ class HistoryQuestionSerializer(serializers.ModelSerializer):
         return 0
 
     def get_isCorrect(self, obj):
-        """
-        Проверка правильности ответа на вопрос.
-        Сравниваем множество правильных ответов с множеством выбранных пользователем.
-        """
         selected_ids = self.context.get('selected_answer_ids', set())
-
-        # 1. ID всех правильных вариантов для этого вопроса
         correct_answer_ids = set(a.id for a in obj.answers.all() if a.is_correct)
-
-        # 2. ID вариантов этого вопроса, которые выбрал юзер
-        # (пересечение всех выборов юзера и вариантов этого вопроса)
         all_options_ids = set(a.id for a in obj.answers.all())
         user_picked_in_this_question = selected_ids.intersection(all_options_ids)
-
-        # 3. Если множества равны — вопрос отвечен верно
         return correct_answer_ids == user_picked_in_this_question
 
     def get_answers(self, obj):
@@ -619,3 +593,93 @@ class TutorialDeleteSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTutorial
         fields = ('id',)
+
+class TutorialUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoTutorial
+        fields = ('id', 'name', 'video', 'poster', 'description', 'tutorial_file')
+
+# Для обновления названия кейса
+class CaseUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Case
+        fields = ("id", "name")
+
+# Для обновления слоя (картинка + описание)
+class LayerUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Layer
+        fields = ("id", "layer_img", "layer_description")
+
+# Для обновления схемы (обе картинки)
+class SchemeUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Scheme
+        fields = ("id", "scheme_img", "scheme_description_img")
+
+
+class AnswerDtoSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)  # Позволяет передавать ID для обновления
+
+    class Meta:
+        model = Answer
+        fields = ('id', 'text', 'is_correct')
+
+
+class QuestionDtoSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+    answers = AnswerDtoSerializer(many=True, required=False)
+
+    class Meta:
+        model = Question
+        fields = ('id', 'name', 'instruction', 'qtype', 'answers')
+
+    def update_or_create_answers(self, question, answers_data):
+        for ans_data in answers_data:
+            ans_id = ans_data.get('id')
+            if ans_id:
+                # Обновляем существующий ответ
+                Answer.objects.filter(id=ans_id, question=question).update(**ans_data)
+            else:
+                # Создаем новый ответ
+                Answer.objects.create(question=question, **ans_data)
+
+class CaseFullUpdateSerializer(serializers.ModelSerializer):
+    # Называем поле 'questions', как в структуре
+    questions = QuestionDtoSerializer(many=True, required=False)
+
+    class Meta:
+        model = Case
+        fields = ('id', 'name', 'questions')
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # 1. Обновляем поля самого Кейса (например, имя)
+        instance.name = validated_data.get('name', instance.name)
+        instance.save()
+
+        # 2. Обрабатываем вложенные вопросы
+        questions_data = validated_data.get('questions')
+        if questions_data is not None:
+            for q_data in questions_data:
+                q_id = q_data.get('id')
+                answers_data = q_data.pop('answers', None)
+
+                if q_id:
+                    # А. Обновляем существующий вопрос
+                    question_obj = instance.questions.filter(id=q_id).first()
+                    if question_obj:
+                        for attr, value in q_data.items():
+                            setattr(question_obj, attr, value)
+                        question_obj.save()
+
+                        # Обновляем ответы внутри этого вопроса
+                        if answers_data is not None:
+                            self.fields['questions'].child.update_or_create_answers(question_obj, answers_data)
+                else:
+                    # Б. Создаем новый вопрос
+                    new_q = Question.objects.create(case=instance, **q_data)
+                    if answers_data:
+                        self.fields['questions'].child.update_or_create_answers(new_q, answers_data)
+
+        return instance

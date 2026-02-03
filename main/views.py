@@ -27,7 +27,9 @@ from .serializers import (
     PathologyDetailInfoSerializer, CaseDetailInfoSerializer, TestTaskSerializer, CaseSubmissionSerializer,
     TestSubmissionWrapperSerializer, UserProfileSerializer, UserTryInfoSerializer, HistoryTaskSerializer,
     VideoTutorialSerializer, TutorialListSerializer, TutorialDetailSerializer, TutorialCreateSerializer,
-    TutorialDeleteSerializer
+    TutorialDeleteSerializer, TestListSerializer, PathologyInfoSerializer, TutorialUpdateSerializer,
+    SchemeUpdateSerializer, LayerUpdateSerializer, CaseUpdateSerializer,
+    CaseFullUpdateSerializer
 )
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin,IsAdminOrAuthenticatedReadOnly
 
@@ -46,36 +48,35 @@ def get_user_tokens(user):
 def loginView(request):
     email = request.data.get("email")
     password = request.data.get("password")
-    if not email or not password:
-        raise rest_exceptions.ValidationError({"detail": "Email and password required"})
-
     user = authenticate(email=email, password=password)
-    if not user:
-        raise rest_exceptions.AuthenticationFailed("Email or password is incorrect!")
 
+    # Если пользователь есть, но пароль не подошел
+    if not user:
+        return response.Response({"error": "Неверный адрес электронной почты или пароль"}, status=status.HTTP_401_UNAUTHORIZED)
     tokens_dict = get_user_tokens(user)
     res = response.Response(tokens_dict)
 
+    # Установка кук
     res.set_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         value=tokens_dict["access_token"],
-        expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
-        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+        httponly=True,
+        samesite='Lax'
     )
     res.set_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         value=tokens_dict["refresh_token"],
-        expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-        httponly=settings.SIMPLE_JWT.get('AUTH_COOKIE_HTTP_ONLY', True),
-        samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
+        httponly=True,
+        samesite='Lax'
     )
     res.set_cookie(
         key="user_role",
         value="admin" if user.is_staff else "worker",
-        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+        max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
         secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
         httponly=True,
         samesite='Lax'
@@ -88,7 +89,7 @@ def loginView(request):
 @decorators.api_view(["POST"])
 @decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
-    # 1. Блэклист refresh токена
+
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if refresh_token:
@@ -98,45 +99,43 @@ def logoutView(request):
         # Если токен уже невалиден или его нет, игнорируем
         pass
 
-    # 2. Формируем ответ
+
     res = response.Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
-    # 3. Удаляем Access Token
+
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 4. Удаляем Refresh Token
+
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 5. Удаляем куку роли (если вы ее ставили при логине)
+
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # Если использовали is_staff
     res.delete_cookie(
         key="is_staff",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 6. Удаляем CSRF куки (стандартные Django настройки)
+
     res.delete_cookie(
         key=settings.CSRF_COOKIE_NAME,
         path='/',
         samesite=settings.CSRF_COOKIE_SAMESITE
     )
 
-    # Иногда фронтенд или Nginx могут ставить дублирующую куку, лучше почистить и её
     res.delete_cookie(
         key="X-CSRFToken",
         path='/',
@@ -166,7 +165,7 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
                 value=response_obj.data['access'],
                 expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
                 secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-                httponly=True, # Жестко True
+                httponly=True,
                 samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
             )
             del response_obj.data["access"]
@@ -193,13 +192,18 @@ def current_user_view(request):
     return response.Response(serializer.data)
 
 
-# -------------------------------------------------------------------------
 # РЕГИСТРАЦИЯ И ПРОФИЛИ
-# -------------------------------------------------------------------------
 
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
     permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        if Account.objects.filter(email=email).exists():
+            return response.Response({"error": "Пользователь с такой почтой уже существует"},
+                                     status=status.HTTP_400_BAD_REQUEST)
+        return super().create(request, *args, **kwargs)
 
 
 class AdminRegisterView(generics.CreateAPIView):
@@ -224,9 +228,7 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
         return WorkerProfile.objects.filter(user=user)
 
 
-# -------------------------------------------------------------------------
 # ОСНОВНАЯ ЛОГИКА (CRUD)
-# -------------------------------------------------------------------------
 
 class PathologyViewSet(viewsets.ModelViewSet):
     queryset = Pathology.objects.all()
@@ -236,7 +238,7 @@ class PathologyViewSet(viewsets.ModelViewSet):
 
 class PathologyImageViewSet(viewsets.ModelViewSet):
     queryset = PathologyImage.objects.all()
-    serializer_class = PathologyImageSerializer
+    serializer_class = PathologyInfoSerializer
     permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
 
@@ -262,10 +264,7 @@ class SchemeViewSet(viewsets.ModelViewSet):
     serializer_class = SchemeSerializer
     permission_classes = [IsAdminOrAuthenticatedReadOnly]
 
-
-# -------------------------------------------------------------------------
 # ЛОГИКА ТЕСТИРОВАНИЯ
-# -------------------------------------------------------------------------
 
 class SubmitTestView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -282,10 +281,6 @@ class SubmitTestView(views.APIView):
 
         if not submission_items:
             return response.Response({"detail": "Список ответов пуст"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # ---------------------------------------------------
-        # 2. Сбор данных
-        # ---------------------------------------------------
         # Список ID кейсов, которые реально были в тесте
         case_ids = [item['caseId'] for item in submission_items]
 
@@ -300,11 +295,8 @@ class SubmitTestView(views.APIView):
                 user_answers_map[q_id] = selected_ids
                 user_selected_ids_flat.extend(question_item['selectedAnswers'])
 
-        # ---------------------------------------------------
-        # 3. Подсчет баллов (СТРОГО по этим case_ids)
-        # ---------------------------------------------------
-        # Важно: фильтруем вопросы ТОЛЬКО по case_ids.
-        # Это гарантирует, что вопросы из других кейсов этой патологии НЕ учитываются.
+
+        # Фильтруем вопросы ТОЛЬКО по case_ids.
         questions_qs = Question.objects.filter(case__id__in=case_ids).prefetch_related('answers')
 
         user_score = 0
@@ -334,10 +326,6 @@ class SubmitTestView(views.APIView):
         # Определение патологии (для статистики)
         first_case = get_object_or_404(Case, pk=case_ids[0])
         pathology = first_case.pathology
-
-        # ---------------------------------------------------
-        # 4. Сохранение
-        # ---------------------------------------------------
         test_result = TestResult.objects.create(
             user=request.user,
             pathology=pathology,
@@ -383,8 +371,49 @@ class PathologyListInfoView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+
+        queryset = queryset.annotate(
+            images_count=Count('images')
+        ).filter(
+            images_count__gt=0
+        ).order_by('number')
+
         serializer = self.get_serializer(queryset, many=True)
 
+        return response.Response({
+            "items": serializer.data
+        })
+
+class AdminPathologyListInfoView(generics.ListAPIView):
+    queryset = Pathology.objects.all()
+    serializer_class = PathologyListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        queryset = queryset.order_by('number')
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return response.Response({
+            "items": serializer.data
+        })
+
+class TestListInfoView(generics.ListAPIView):
+    serializer_class = TestListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Возвращаем только патологии с кейсами
+        return Pathology.objects.annotate(
+            cases_count=Count('cases')
+        ).filter(
+            cases_count__gt=0
+        ).order_by('number')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
         return response.Response({
             "items": serializer.data
         })
@@ -407,6 +436,7 @@ class ClinicalCaseListView(generics.ListAPIView):
         return response.Response({
             "items": serializer.data
         })
+
 
 class PathologyDetailView(generics.RetrieveAPIView):
     queryset = Pathology.objects.prefetch_related("images").all()
@@ -528,7 +558,7 @@ class TestResultHistoryView(generics.RetrieveAPIView):
         })
 
 
-# 1. Список туториалов
+# Список туториалов
 class TutorialListView(generics.ListAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialListSerializer
@@ -544,7 +574,7 @@ class TutorialListView(generics.ListAPIView):
         })
 
 
-# 2. Детальная информация о туториале
+# Детальная информация о туториале
 class TutorialDetailView(generics.RetrieveAPIView):
     queryset = VideoTutorial.objects.all()
     serializer_class = TutorialDetailSerializer
@@ -565,3 +595,36 @@ class TutorialDeleteView(generics.DestroyAPIView):
     permission_classes = [IsAdminOrSuperAdmin]
     lookup_field = 'id'
 
+class TutorialUpdateView(generics.UpdateAPIView):
+    queryset = VideoTutorial.objects.all()
+    serializer_class = TutorialUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+
+# Редактирование самого кейса (Названия)
+class CaseUpdateView(generics.UpdateAPIView):
+    queryset = Case.objects.all()
+    serializer_class = CaseUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+# Редактирование конкретного слоя
+class LayerUpdateView(generics.UpdateAPIView):
+    queryset = Layer.objects.all()
+    serializer_class = LayerUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+# Редактирование схемы
+class SchemeUpdateView(generics.UpdateAPIView):
+    queryset = Scheme.objects.all()
+    serializer_class = SchemeUpdateSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    lookup_field = 'id'
+
+class CaseQuestionsUpdateView(generics.RetrieveUpdateAPIView):
+    queryset = Case.objects.prefetch_related('questions__answers').all()
+    serializer_class = CaseFullUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
